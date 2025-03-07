@@ -10,14 +10,24 @@ const openai = new OpenAI({
 });
 
 /**
- * Check if a message contains spam or scam content
+ * Check if a message contains spam or scam content, considering channel context
  * 
  * @param {string} messageContent - The content of the message to check
+ * @param {Array<Object>} previousMessages - Previous messages in the channel for context
  * @returns {Promise<Object>} - Result object with isSpamOrScam flag and reason
  */
-async function checkMessage(messageContent) {
+async function checkMessage(messageContent, previousMessages = []) {
   try {
     logger.debug('Checking message with AI:', messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''));
+    
+    // Format previous messages for context
+    const formattedPreviousMessages = previousMessages.map(msg => {
+      return `[${msg.author}]: ${msg.content}`;
+    }).join('\n');
+    
+    const contextText = previousMessages.length > 0 
+      ? `\nHere are the previous ${previousMessages.length} messages in this channel for context:\n${formattedPreviousMessages}\n\nNow analyze this new message:`
+      : '';
     
     const systemPrompt = `
     You are a Discord moderation assistant that identifies spam and scam messages.
@@ -31,6 +41,11 @@ async function checkMessage(messageContent) {
     6. Impersonation of staff or team members
     7. Phishing attempts asking for personal information or wallet addresses
     
+    Consider the context of the conversation when making your determination:
+    - If the message is a normal part of an ongoing conversation, it's likely not spam
+    - If the message suddenly changes topic in a suspicious way, it might be spam
+    - Consider whether the user has been participating normally in the conversation
+    
     For each message, you will only respond with a JSON object in this format:
     {
       "isSpamOrScam": true/false,
@@ -41,18 +56,31 @@ async function checkMessage(messageContent) {
     and legitimate support requests should not be flagged.
     `;
     
+    // Construct messages array for the API call
+    const messages = [
+      {
+        role: "system",
+        content: systemPrompt
+      }
+    ];
+    
+    // Add context as a separate message if available
+    if (contextText) {
+      messages.push({
+        role: "user",
+        content: contextText
+      });
+    }
+    
+    // Add the current message to analyze
+    messages.push({
+      role: "user",
+      content: messageContent
+    });
+    
     const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "user",
-          content: messageContent
-        }
-      ],
+      model: config.openaiModel,
+      messages: messages,
       temperature: 0.1,
       max_tokens: 150,
       response_format: { type: "json_object" }

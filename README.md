@@ -6,9 +6,11 @@ A Node.js bot for Discord that uses AI to automatically moderate messages and re
 
 - Automatically monitors Discord channels for spam and scam messages
 - Uses OpenAI's GPT models to intelligently detect problematic content
+- Considers previous channel messages for context when moderating
 - Can be configured to monitor specific channels or the entire server
 - Allows excluding users with specific roles from moderation
-- Provides detailed logging of moderation actions
+- Sends detailed notifications to a designated channel for moderation actions
+- Provides detailed logging of moderation activities
 - Runs as a systemd service on Ubuntu for 24/7 operation
 
 ## Requirements
@@ -42,6 +44,7 @@ A Node.js bot for Discord that uses AI to automatically moderate messages and re
    DISCORD_TOKEN=your_discord_bot_token
    DISCORD_SERVER_ID=your_server_id
    OPENAI_API_KEY=your_openai_api_key
+   OPENAI_MODEL=gpt-3.5-turbo
    # Add more configuration as needed
    ```
 
@@ -61,21 +64,24 @@ The bot supports the following command line arguments:
 
 ```
 Options:
-  -t, --token            Discord bot token                        [string]
-  -s, --server           Discord server ID                        [string]
-  -c, --channels         Comma-separated list of moderated channel IDs
-                         (default: all)                           [string]
-  -e, --excluded-roles   Comma-separated list of role IDs to exclude from
-                         moderation                               [string]
-  -l, --log-level        Log level (error, warn, info, debug)
-                                                  [string] [default: "info"]
-  -k, --openai-api-key   OpenAI API key                          [string]
-  -h, --help             Show help                               [boolean]
+  -t, --token                Discord bot token                      [string]
+  -s, --server               Discord server ID                      [string]
+  -c, --channels             Comma-separated list of moderated channel IDs
+                             (default: all)                         [string]
+  -e, --excluded-roles       Comma-separated list of role IDs to exclude from
+                             moderation                             [string]
+  -m, --openai-model         OpenAI model to use                    [string]
+  -n, --notification-channel Channel ID to send notifications to    [string]
+  --context-messages         Number of previous messages for context [number]
+  -l, --log-level            Log level (error, warn, info, debug)
+                                                    [string] [default: "info"]
+  -k, --openai-api-key       OpenAI API key                        [string]
+  -h, --help                 Show help                             [boolean]
 ```
 
 Example:
 ```bash
-node src/index.js --token=your_token --server=your_server_id --channels=channel1,channel2 --excluded-roles=role1,role2
+node src/index.js --token=your_token --server=your_server_id --channels=channel1,channel2 --excluded-roles=role1,role2 --openai-model=gpt-4
 ```
 
 ### Setting Up as a Systemd Service
@@ -113,6 +119,9 @@ The bot can be configured using environment variables or command line arguments.
 - `MODERATED_CHANNELS`: Comma-separated list of channel IDs to moderate (leave empty to moderate all)
 - `EXCLUDED_ROLES`: Comma-separated list of role IDs to exclude from moderation
 - `OPENAI_API_KEY`: Your OpenAI API key
+- `OPENAI_MODEL`: Model to use for AI moderation (default: gpt-3.5-turbo)
+- `NOTIFICATION_CHANNEL_ID`: Channel ID to send detailed moderation notifications
+- `CONTEXT_MESSAGE_COUNT`: Number of previous messages to include for context (default: 5)
 - `LOG_LEVEL`: Logging level (error, warn, info, debug)
 
 ## Logging
@@ -132,12 +141,43 @@ The bot monitors messages for:
 6. Impersonation of staff or team members
 7. Phishing attempts asking for personal information or wallet addresses
 
+## Discord Integration Options
+
+There are several ways to integrate this bot with Discord:
+
+### 1. Standard Bot User (Default)
+
+This is the most common method where you create a bot application in the Discord Developer Portal and add it to your server. This approach:
+
+- Requires a separate bot user in your server
+- Needs specific permissions to read/delete messages
+- Is easy to set up through the Discord Developer Portal
+
+### 2. Discord Interactions and Webhooks
+
+For more advanced integrations with fewer permissions, you could modify this code to use:
+
+- **Discord Webhooks**: For sending notifications without a full bot
+- **Discord Interactions**: For slash commands (would require additional development)
+
+### 3. User Account Token (Not Recommended)
+
+While technically possible to use a user account token instead of a bot token, this approach:
+- Violates Discord's Terms of Service
+- Can result in account termination
+- Is not supported by this code
+
+### 4. Discord Bot Framework Integration
+
+If you already have a bot for your server, you could integrate this moderation code as a module in your existing bot framework to avoid adding another bot user to your server.
+
 ## Troubleshooting
 
 - **Bot not starting**: Check the logs for error messages
 - **Bot not detecting messages**: Make sure the bot has the required permissions in Discord
 - **OpenAI API errors**: Verify your API key and quota
 - **Bot not running after system restart**: Make sure the systemd service is enabled
+- **Context not being considered**: Ensure the bot has permissions to read message history
 
 ## License
 

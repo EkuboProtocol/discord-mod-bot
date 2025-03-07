@@ -40,6 +40,21 @@ const argv = yargs(hideBin(process.argv))
     description: 'OpenAI API key',
     type: 'string'
   })
+  .option('openai-model', {
+    alias: 'm',
+    description: 'OpenAI model to use',
+    type: 'string'
+  })
+  .option('notification-channel', {
+    alias: 'n',
+    description: 'Channel ID to send moderation notifications to',
+    type: 'string'
+  })
+  .option('context-messages', {
+    description: 'Number of previous messages to include for context',
+    type: 'number',
+    default: 5
+  })
   .help()
   .alias('help', 'h')
   .argv;
@@ -66,6 +81,13 @@ const config = {
   
   // OpenAI configuration
   openaiApiKey: argv['openai-api-key'] || process.env.OPENAI_API_KEY,
+  openaiModel: argv['openai-model'] || process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+  
+  // Notification channel for moderation actions
+  notificationChannelId: argv['notification-channel'] || process.env.NOTIFICATION_CHANNEL_ID,
+  
+  // Context for AI analysis
+  contextMessageCount: argv['context-messages'] || parseInt(process.env.CONTEXT_MESSAGE_COUNT || '5', 10),
   
   // Logging configuration
   logLevel: argv['log-level'] || process.env.LOG_LEVEL || 'info'

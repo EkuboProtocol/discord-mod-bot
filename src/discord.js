@@ -34,6 +34,25 @@ function setupBot(client, config, checkMessageFn) {
     }
     
     logger.info(`Excluded roles: ${config.excludedRoles.length ? config.excludedRoles.join(', ') : 'None'}`);
+    
+    // Verify notification channel if configured
+    if (config.notificationChannelId) {
+      const notificationChannel = client.channels.cache.get(config.notificationChannelId);
+      if (!notificationChannel) {
+        logger.warn(`Could not find the specified notification channel with ID: ${config.notificationChannelId}`);
+        logger.info('Available channels:');
+        targetGuild.channels.cache.forEach(channel => {
+          if (channel.type === 0) { // 0 is GUILD_TEXT
+            logger.info(`- ${channel.name} (${channel.id})`);
+          }
+        });
+      } else {
+        logger.info(`Using notification channel: #${notificationChannel.name}`);
+      }
+    }
+    
+    logger.info(`Using OpenAI model: ${config.openaiModel}`);
+    logger.info(`Using ${config.contextMessageCount} previous messages for context`);
   });
 
   // Handle incoming messages
@@ -63,8 +82,29 @@ function setupBot(client, config, checkMessageFn) {
       // Log the message for debugging
       logger.debug(`Processing message from ${message.author.tag} in #${message.channel.name}: ${message.content}`);
       
-      // Send to AI for checking
-      const result = await checkMessageFn(message.content);
+      // Fetch previous messages for context
+      let previousMessages = [];
+      if (config.contextMessageCount > 0) {
+        try {
+          const messages = await message.channel.messages.fetch({ 
+            limit: config.contextMessageCount,
+            before: message.id 
+          });
+          
+          previousMessages = messages.map(msg => ({
+            author: msg.author.tag,
+            content: msg.content,
+            timestamp: msg.createdAt
+          })).reverse(); // Oldest first
+          
+          logger.debug(`Fetched ${previousMessages.length} previous messages for context`);
+        } catch (error) {
+          logger.warn('Could not fetch previous messages for context:', error);
+        }
+      }
+      
+      // Send to AI for checking with context
+      const result = await checkMessageFn(message.content, previousMessages);
       
       if (result.isSpamOrScam) {
         logger.info(`Detected spam/scam from ${message.author.tag} in #${message.channel.name}`);
@@ -83,6 +123,53 @@ function setupBot(client, config, checkMessageFn) {
         setTimeout(() => {
           notificationMsg.delete().catch(e => logger.warn('Could not delete notification message:', e));
         }, 10000);
+        
+        // Send detailed notification to the designated notification channel
+        if (config.notificationChannelId) {
+          try {
+            const notificationChannel = client.channels.cache.get(config.notificationChannelId);
+            if (notificationChannel) {
+              await notificationChannel.send({
+                embeds: [{
+                  title: 'Moderation Action: Message Removed',
+                  color: 0xFF0000, // Red
+                  description: `A message has been removed for violating server rules.`,
+                  fields: [
+                    {
+                      name: 'User',
+                      value: `${message.author.tag} (${message.author.id})`,
+                      inline: true
+                    },
+                    {
+                      name: 'Channel',
+                      value: `#${message.channel.name} (${message.channel.id})`,
+                      inline: true
+                    },
+                    {
+                      name: 'Timestamp',
+                      value: new Date().toISOString(),
+                      inline: true
+                    },
+                    {
+                      name: 'Reason',
+                      value: result.reason || 'Not specified'
+                    },
+                    {
+                      name: 'Message Content',
+                      value: message.content.length > 1024 ? message.content.substring(0, 1021) + '...' : message.content
+                    }
+                  ],
+                  timestamp: new Date(),
+                  footer: {
+                    text: 'Discord Moderation Bot'
+                  }
+                }]
+              });
+            }
+          } catch (error) {
+            logger.error('Failed to send notification to the notification channel:', error);
+          }
+        }
         
         // TODO: Implement ban logic for repeat offenders if required
       }
