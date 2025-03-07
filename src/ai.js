@@ -18,12 +18,26 @@ const openai = new OpenAI({
  */
 async function checkMessage(messageContent, previousMessages = []) {
   try {
-    logger.debug('Checking message with AI:', messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''));
+    // Log full message being analyzed
+    logger.debug('=========== BEGIN MESSAGE ANALYSIS ===========');
+    logger.debug('Message being analyzed:');
+    logger.debug(messageContent);
+    logger.debug('=============================================');
     
     // Format previous messages for context
     const formattedPreviousMessages = previousMessages.map(msg => {
       return `[${msg.author}]: ${msg.content}`;
     }).join('\n');
+    
+    // Log previous messages if available
+    if (previousMessages.length > 0) {
+      logger.debug('Previous messages for context:');
+      logger.debug(formattedPreviousMessages);
+      logger.debug('=============================================');
+    } else {
+      logger.debug('No previous messages for context');
+      logger.debug('=============================================');
+    }
     
     const contextText = previousMessages.length > 0 
       ? `\nHere are the previous ${previousMessages.length} messages in this channel for context:\n${formattedPreviousMessages}\n\nNow analyze this new message:`
@@ -56,6 +70,11 @@ async function checkMessage(messageContent, previousMessages = []) {
     and legitimate support requests should not be flagged.
     `;
     
+    // Log system prompt
+    logger.debug('System prompt:');
+    logger.debug(systemPrompt);
+    logger.debug('=============================================');
+    
     // Construct messages array for the API call
     const messages = [
       {
@@ -75,9 +94,24 @@ async function checkMessage(messageContent, previousMessages = []) {
     // Add the current message to analyze
     messages.push({
       role: "user",
-      content: messageContent
+        content: messageContent
     });
     
+    // Log full messages array being sent to OpenAI
+    logger.debug('Complete messages array being sent to OpenAI:');
+    logger.debug(JSON.stringify(messages, null, 2));
+    logger.debug('=============================================');
+    
+    // Log request parameters
+    logger.debug('OpenAI request parameters:');
+    logger.debug(`Model: ${config.openaiModel}`);
+    logger.debug(`Temperature: 0.1`);
+    logger.debug(`Max tokens: 150`);
+    logger.debug(`Response format: JSON object`);
+    logger.debug('=============================================');
+    
+    // Send request to OpenAI
+    logger.debug('Sending request to OpenAI...');
     const response = await openai.chat.completions.create({
       model: config.openaiModel,
       messages: messages,
@@ -86,13 +120,26 @@ async function checkMessage(messageContent, previousMessages = []) {
       response_format: { type: "json_object" }
     });
     
+    // Log full OpenAI response
+    logger.debug('Full OpenAI API response:');
+    logger.debug(JSON.stringify(response, null, 2));
+    logger.debug('=============================================');
+    
     // Extract the content from the response
     const aiResponse = response.choices[0].message.content;
+    
+    // Log the extracted content
+    logger.debug('Extracted AI response content:');
+    logger.debug(aiResponse);
+    logger.debug('=============================================');
     
     // Parse the JSON response
     const result = JSON.parse(aiResponse);
     
-    logger.debug(`AI analysis result: ${JSON.stringify(result)}`);
+    // Log the parsed result
+    logger.debug('Parsed AI analysis result:');
+    logger.debug(JSON.stringify(result, null, 2));
+    logger.debug('============ END MESSAGE ANALYSIS ===========');
     
     return {
       isSpamOrScam: result.isSpamOrScam,
@@ -100,6 +147,7 @@ async function checkMessage(messageContent, previousMessages = []) {
     };
   } catch (error) {
     logger.error('Error checking message with AI:', error);
+    logger.debug('============ MESSAGE ANALYSIS FAILED ===========');
     
     // Return a safe default to ensure bot continues functioning
     return {
