@@ -1,0 +1,33 @@
+{
+  "name": "discord-mod-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for moderating messages using AI",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "echo \"No tests implemented yet\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EkuboProtocol/discord-mod-bot.git"
+  },
+  "keywords": [
+    "discord",
+    "moderation",
+    "bot",
+    "ai"
+  ],
+  "author": "EkuboProtocol",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/EkuboProtocol/discord-mod-bot/issues"
+  },
+  "homepage": "https://github.com/EkuboProtocol/discord-mod-bot#readme",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "openai": "^4.20.1",
+    "winston": "^3.11.0",
+    "yargs": "^17.7.2"
+  }
+}

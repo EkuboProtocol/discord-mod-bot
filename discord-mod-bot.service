@@ -1,0 +1,19 @@
+[Unit]
+Description=Discord Moderation Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/discord-mod-bot
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+Environment=NODE_ENV=production
+
+# Environment variables can be defined here or in .env file
+# Environment=DISCORD_TOKEN=your_token
+# Environment=DISCORD_SERVER_ID=your_server_id
+# Environment=OPENAI_API_KEY=your_openai_key
+
+[Install]
+WantedBy=multi-user.target
