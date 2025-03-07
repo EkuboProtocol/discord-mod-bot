@@ -120,6 +120,7 @@ The bot can be configured using environment variables or command line arguments.
 - `EXCLUDED_ROLES`: Comma-separated list of role IDs to exclude from moderation
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `OPENAI_MODEL`: Model to use for AI moderation (default: gpt-3.5-turbo)
+- `IGNORED_PHRASES`: Comma-separated list of phrases to ignore (won't be sent to OpenAI)
 - `NOTIFICATION_CHANNEL_ID`: Channel ID to send detailed moderation notifications
 - `CONTEXT_MESSAGE_COUNT`: Number of previous messages to include for context (default: 5)
 - `LOG_LEVEL`: Logging level (error, warn, info, debug)

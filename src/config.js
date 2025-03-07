@@ -55,6 +55,11 @@ const argv = yargs(hideBin(process.argv))
     type: 'number',
     default: 5
   })
+  .option('ignored-phrases', {
+    alias: 'i',
+    description: 'Comma-separated list of phrases to ignore (won\'t be sent to OpenAI)',
+    type: 'string'
+  })
   .help()
   .alias('help', 'h')
   .argv;
@@ -85,6 +90,13 @@ const config = {
   
   // Notification channel for moderation actions
   notificationChannelId: argv['notification-channel'] || process.env.NOTIFICATION_CHANNEL_ID,
+  
+  // Message filtering
+  ignoredPhrases: argv['ignored-phrases']
+    ? argv['ignored-phrases'].split(',').map(p => p.trim().toLowerCase())
+    : process.env.IGNORED_PHRASES
+      ? process.env.IGNORED_PHRASES.split(',').map(p => p.trim().toLowerCase())
+      : ['gm'], // Default to ignoring "gm" if not specified
   
   // Context for AI analysis
   contextMessageCount: argv['context-messages'] || parseInt(process.env.CONTEXT_MESSAGE_COUNT || '5', 10),

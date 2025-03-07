@@ -82,6 +82,13 @@ function setupBot(client, config, checkMessageFn) {
       // Log the message for debugging
       logger.debug(`Processing message from ${message.author.tag} in #${message.channel.name}: ${message.content}`);
       
+      // Check if the message content is in the ignored phrases list
+      const messageContentLower = message.content.trim().toLowerCase();
+      if (config.ignoredPhrases.includes(messageContentLower)) {
+        logger.debug(`Skipping message "${messageContentLower}" - in ignored phrases list`);
+        return;
+      }
+      
       // Fetch previous messages for context
       let previousMessages = [];
       if (config.contextMessageCount > 0) {
