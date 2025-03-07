@@ -1,5 +1,27 @@
-# Dependency directories
+# Node.js
 node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+.npm/
+.yarn/
+.pnp.*
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+.coverage.*
+.cache/
+.python-version
+.venv/
+venv/
+ENV/
+env/
 
 # Logs
 logs/
@@ -15,8 +37,18 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# Editor directories and files
+# Editor files and directories
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build directories
+dist/
+build/
+*.egg-info/
