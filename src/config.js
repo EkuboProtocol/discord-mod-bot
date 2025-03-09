@@ -29,6 +29,16 @@ const argv = yargs(hideBin(process.argv))
     description: 'Comma-separated list of role IDs to exclude from moderation',
     type: 'string'
   })
+  .option('excluded-channels', {
+    alias: 'x',
+    description: 'Comma-separated list of channel IDs to exclude from moderation',
+    type: 'string'
+  })
+  .option('welcome-channel', {
+    alias: 'w',
+    description: 'Channel ID of the welcome channel to exclude from moderation',
+    type: 'string'
+  })
   .option('log-level', {
     alias: 'l',
     description: 'Log level (error, warn, info, debug)',
@@ -81,6 +91,24 @@ const config = {
     : process.env.MODERATED_CHANNELS 
       ? process.env.MODERATED_CHANNELS.split(',').map(c => c.trim())
       : undefined,
+  
+  // Channels to exclude from moderation
+  excludedChannels: (() => {
+    // Start with the excluded channels from CLI/env
+    const excluded = argv['excluded-channels']
+      ? argv['excluded-channels'].split(',').map(c => c.trim())
+      : process.env.EXCLUDED_CHANNELS
+        ? process.env.EXCLUDED_CHANNELS.split(',').map(c => c.trim())
+        : [];
+    
+    // Add welcome channel if specified
+    const welcomeChannel = argv['welcome-channel'] || process.env.WELCOME_CHANNEL_ID;
+    if (welcomeChannel && !excluded.includes(welcomeChannel)) {
+      excluded.push(welcomeChannel);
+    }
+    
+    return excluded;
+  })(),
   
   // Roles to exclude from moderation
   excludedRoles: argv['excluded-roles']

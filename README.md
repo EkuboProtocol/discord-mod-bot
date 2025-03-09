@@ -71,6 +71,10 @@ Options:
                              (default: all)                         [string]
   -e, --excluded-roles       Comma-separated list of role IDs to exclude from
                              moderation                             [string]
+  -x, --excluded-channels    Comma-separated list of channel IDs to exclude from
+                             moderation                             [string]
+  -w, --welcome-channel      Channel ID of the welcome channel to exclude from
+                             moderation                             [string]
   -m, --openai-model         OpenAI model to use                    [string]
   -n, --notification-channel Channel ID to send notifications to    [string]
   --context-messages         Number of previous messages for context [number]
@@ -118,6 +122,8 @@ The bot can be configured using environment variables or command line arguments.
 - `DISCORD_TOKEN`: Your Discord bot token
 - `DISCORD_SERVER_ID`: The ID of your Discord server
 - `MODERATED_CHANNELS`: Comma-separated list of channel IDs to moderate (leave empty to moderate all)
+- `EXCLUDED_CHANNELS`: Comma-separated list of channel IDs to exclude from moderation
+- `WELCOME_CHANNEL_ID`: Channel ID of the welcome channel to exclude from moderation (automated messages)
 - `EXCLUDED_ROLES`: Comma-separated list of role IDs to exclude from moderation
 - `TIMEOUT_DURATION`: Duration in minutes to timeout users when their message is deleted (default: 5, set to 0 to disable)
 - `OPENAI_API_KEY`: Your OpenAI API key

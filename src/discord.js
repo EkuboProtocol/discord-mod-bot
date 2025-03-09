@@ -33,6 +33,21 @@ function setupBot(client, config, checkMessageFn) {
       logger.info(`Moderating specific channels: ${config.moderatedChannels.join(', ')}`);
     }
     
+    // Log which channels are excluded from moderation
+    if (config.excludedChannels && config.excludedChannels.length > 0) {
+      logger.info(`Excluded channels: ${config.excludedChannels.join(', ')}`);
+      
+      // Try to log the names of the excluded channels for better readability
+      const excludedChannelNames = config.excludedChannels
+        .map(id => {
+          const channel = targetGuild.channels.cache.get(id);
+          return channel ? `#${channel.name} (${id})` : id;
+        })
+        .join(', ');
+      
+      logger.info(`Excluded channels by name: ${excludedChannelNames}`);
+    }
+    
     logger.info(`Excluded roles: ${config.excludedRoles.length ? config.excludedRoles.join(', ') : 'None'}`);
     
     // Verify notification channel if configured
@@ -65,6 +80,12 @@ function setupBot(client, config, checkMessageFn) {
     
     // Check if we should moderate this channel
     if (config.moderatedChannels && !config.moderatedChannels.includes(message.channel.id)) {
+      return;
+    }
+    
+    // Check if this channel is in the excluded channels list
+    if (config.excludedChannels && config.excludedChannels.includes(message.channel.id)) {
+      logger.debug(`Skipping message in #${message.channel.name} (${message.channel.id}) - channel excluded from moderation`);
       return;
     }
     
