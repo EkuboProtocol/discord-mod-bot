@@ -1,6 +1,7 @@
 'use strict';
 
 const { logger } = require('./logger');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 /**
  * Sets up the Discord bot with all necessary event handlers
@@ -68,6 +69,171 @@ function setupBot(client, config, checkMessageFn) {
     
     logger.info(`Using OpenAI model: ${config.openaiModel}`);
     logger.info(`Using ${config.contextMessageCount} previous messages for context`);
+  });
+
+  // Handle button interactions for moderation actions
+  client.on('interactionCreate', async (interaction) => {
+    // Only handle button interactions
+    if (!interaction.isButton()) return;
+    
+    try {
+      // Check if the button is one of our moderation buttons
+      if (interaction.customId.startsWith('ban:') || interaction.customId.startsWith('delete:')) {
+        // Extract user and guild IDs from the customId
+        const parts = interaction.customId.split(':');
+        const action = parts[0];
+        const userId = parts[1];
+        const guildId = parts[2];
+        
+        // Get the guild and verify permissions
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+          return await interaction.reply({ 
+            content: '❌ Error: Cannot find the server.',
+            ephemeral: true
+          });
+        }
+        
+        // Check if the user clicking the button has permission
+        if (!interaction.member.permissions.has('BanMembers')) {
+          return await interaction.reply({ 
+            content: '❌ You do not have permission to perform this action.',
+            ephemeral: true 
+          });
+        }
+        
+        // Defer the reply to give us time to process
+        await interaction.deferReply({ ephemeral: true });
+        
+        if (action === 'ban') {
+          try {
+            // Ban the user
+            await guild.members.ban(userId, { 
+              reason: `Banned by ${interaction.user.tag} through moderation bot` 
+            });
+            
+            await interaction.editReply({ 
+              content: `✅ Successfully banned user <@${userId}>.`,
+              ephemeral: true 
+            });
+            
+            // Edit the original message to update the status
+            if (interaction.message.editable) {
+              // Create a new embed based on the original one
+              const originalEmbed = interaction.message.embeds[0];
+              const newEmbed = {
+                ...originalEmbed.data,
+                title: 'Moderation Action: User Banned',
+                fields: [
+                  ...originalEmbed.fields,
+                  {
+                    name: 'Ban',
+                    value: `User was banned by ${interaction.user.tag}`
+                  }
+                ]
+              };
+              
+              // Remove the buttons since action has been taken
+              await interaction.message.edit({ 
+                embeds: [newEmbed],
+                components: [] 
+              });
+            }
+          } catch (error) {
+            logger.error(`Failed to ban user ${userId}:`, error);
+            await interaction.editReply({ 
+              content: `❌ Failed to ban user: ${error.message}`,
+              ephemeral: true 
+            });
+          }
+        } else if (action === 'delete') {
+          try {
+            // Delete recent messages from this user across all channels
+            let deletedCount = 0;
+            
+            // Get all text channels
+            const textChannels = guild.channels.cache.filter(c => c.type === 0);
+            
+            for (const [, channel] of textChannels) {
+              try {
+                // Get recent messages in this channel
+                const messages = await channel.messages.fetch({ limit: 100 });
+                
+                // Filter messages from this user that are less than 14 days old
+                const userMessages = messages.filter(m => 
+                  m.author.id === userId && 
+                  (Date.now() - m.createdTimestamp) < 1209600000 // 14 days in milliseconds
+                );
+                
+                if (userMessages.size > 0) {
+                  // Bulk delete if possible
+                  if (userMessages.size > 1) {
+                    await channel.bulkDelete(userMessages);
+                  } else {
+                    // Delete single message
+                    await userMessages.first().delete();
+                  }
+                  
+                  deletedCount += userMessages.size;
+                }
+              } catch (e) {
+                // Log error but continue with other channels
+                logger.warn(`Failed to delete messages in channel ${channel.name}:`, e);
+              }
+            }
+            
+            await interaction.editReply({ 
+              content: `✅ Deleted ${deletedCount} messages from user <@${userId}>.`,
+              ephemeral: true 
+            });
+            
+            // Update original message
+            if (interaction.message.editable) {
+              const originalEmbed = interaction.message.embeds[0];
+              const newEmbed = {
+                ...originalEmbed.data,
+                fields: [
+                  ...originalEmbed.fields,
+                  {
+                    name: 'Messages Deleted',
+                    value: `${deletedCount} messages were deleted by ${interaction.user.tag}`
+                  }
+                ]
+              };
+              
+              await interaction.message.edit({ 
+                embeds: [newEmbed],
+                components: [] 
+              });
+            }
+          } catch (error) {
+            logger.error(`Failed to delete messages from user ${userId}:`, error);
+            await interaction.editReply({ 
+              content: `❌ Failed to delete messages: ${error.message}`,
+              ephemeral: true 
+            });
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Error handling button interaction:', error);
+      try {
+        // Try to reply if we haven't already
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: '❌ An error occurred while processing this action.',
+            ephemeral: true
+          });
+        } else if (interaction.deferred && !interaction.replied) {
+          await interaction.editReply({
+            content: '❌ An error occurred while processing this action.',
+            ephemeral: true
+          });
+        }
+      } catch (e) {
+        logger.error('Error responding to interaction error:', e);
+      }
+    }
   });
 
   // Handle incoming messages
@@ -165,6 +331,7 @@ function setupBot(client, config, checkMessageFn) {
         }
         
         // Notify the channel that a message was removed and user was timed out
+        // Note: message.author is already a mention/clickable by default in this context
         let notificationText = `⚠️ Removed a message from ${message.author} that violated server rules. Reason: ${result.reason}`;
         if (timeoutApplied) {
           notificationText += ` User has been timed out for ${timeoutDuration} minute${timeoutDuration !== 1 ? 's' : ''}.`;
@@ -182,15 +349,21 @@ function setupBot(client, config, checkMessageFn) {
           try {
             const notificationChannel = client.channels.cache.get(config.notificationChannelId);
             if (notificationChannel) {
+              // Create clickable user mention
+              const userMention = `<@${message.author.id}>`;
+              
+              // Create clickable channel mention
+              const channelMention = `<#${message.channel.id}>`;
+              
               const fields = [
                 {
                   name: 'User',
-                  value: `${message.author.tag} (${message.author.id})`,
+                  value: `${userMention} (${message.author.tag}, ${message.author.id})`,
                   inline: true
                 },
                 {
                   name: 'Channel',
-                  value: `#${message.channel.name} (${message.channel.id})`,
+                  value: `${channelMention} (${message.channel.id})`,
                   inline: true
                 },
                 {
@@ -216,6 +389,20 @@ function setupBot(client, config, checkMessageFn) {
                 });
               }
               
+              // Create action buttons
+              const banButton = new ButtonBuilder()
+                .setCustomId(`ban:${message.author.id}:${message.guild.id}`)
+                .setLabel('Ban User')
+                .setStyle(ButtonStyle.Danger);
+              
+              const deleteMessagesButton = new ButtonBuilder()
+                .setCustomId(`delete:${message.author.id}:${message.guild.id}`)
+                .setLabel('Delete Recent Messages')
+                .setStyle(ButtonStyle.Secondary);
+                
+              const actionRow = new ActionRowBuilder()
+                .addComponents(banButton, deleteMessagesButton);
+              
               await notificationChannel.send({
                 embeds: [{
                   title: timeoutApplied 
@@ -228,7 +415,8 @@ function setupBot(client, config, checkMessageFn) {
                   footer: {
                     text: 'Discord Moderation Bot'
                   }
-                }]
+                }],
+                components: [actionRow]
               });
             }
           } catch (error) {
