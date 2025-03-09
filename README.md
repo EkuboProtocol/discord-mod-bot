@@ -9,6 +9,7 @@ A Node.js bot for Discord that uses AI to automatically moderate messages and re
 - Considers previous channel messages for context when moderating
 - Can be configured to monitor specific channels or the entire server
 - Allows excluding users with specific roles from moderation
+- Automatically times out users who post spam/scam content (configurable duration)
 - Sends detailed notifications to a designated channel for moderation actions
 - Provides detailed logging of moderation activities
 - Runs as a systemd service on Ubuntu for 24/7 operation
@@ -118,6 +119,7 @@ The bot can be configured using environment variables or command line arguments.
 - `DISCORD_SERVER_ID`: The ID of your Discord server
 - `MODERATED_CHANNELS`: Comma-separated list of channel IDs to moderate (leave empty to moderate all)
 - `EXCLUDED_ROLES`: Comma-separated list of role IDs to exclude from moderation
+- `TIMEOUT_DURATION`: Duration in minutes to timeout users when their message is deleted (default: 5, set to 0 to disable)
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `OPENAI_MODEL`: Model to use for AI moderation (default: gpt-3.5-turbo)
 - `IGNORED_PHRASES`: Comma-separated list of phrases to ignore (won't be sent to OpenAI)

@@ -121,10 +121,35 @@ function setupBot(client, config, checkMessageFn) {
         // Delete the message
         await message.delete();
         
-        // Notify the channel that a message was removed
-        const notificationMsg = await message.channel.send(
-          `⚠️ Removed a message from ${message.author} that violated server rules. Reason: ${result.reason}`
-        );
+        // Timeout the user if timeout duration is greater than 0
+        let timeoutApplied = false;
+        let timeoutDuration = config.timeoutDuration;
+        
+        if (timeoutDuration > 0 && message.member) {
+          try {
+            // Convert minutes to milliseconds
+            const timeoutMs = timeoutDuration * 60 * 1000;
+            
+            await message.member.timeout(
+              timeoutMs, 
+              `Automated timeout: ${result.reason || 'Posted spam/scam content'}`
+            );
+            
+            timeoutApplied = true;
+            logger.info(`Applied ${timeoutDuration} minute timeout to ${message.author.tag}`);
+          } catch (error) {
+            logger.error(`Failed to timeout user ${message.author.tag}:`, error);
+            timeoutApplied = false;
+          }
+        }
+        
+        // Notify the channel that a message was removed and user was timed out
+        let notificationText = `⚠️ Removed a message from ${message.author} that violated server rules. Reason: ${result.reason}`;
+        if (timeoutApplied) {
+          notificationText += ` User has been timed out for ${timeoutDuration} minute${timeoutDuration !== 1 ? 's' : ''}.`;
+        }
+        
+        const notificationMsg = await message.channel.send(notificationText);
         
         // Delete the notification after a few seconds to keep the channel clean
         setTimeout(() => {
@@ -136,36 +161,48 @@ function setupBot(client, config, checkMessageFn) {
           try {
             const notificationChannel = client.channels.cache.get(config.notificationChannelId);
             if (notificationChannel) {
+              const fields = [
+                {
+                  name: 'User',
+                  value: `${message.author.tag} (${message.author.id})`,
+                  inline: true
+                },
+                {
+                  name: 'Channel',
+                  value: `#${message.channel.name} (${message.channel.id})`,
+                  inline: true
+                },
+                {
+                  name: 'Timestamp',
+                  value: new Date().toISOString(),
+                  inline: true
+                },
+                {
+                  name: 'Reason',
+                  value: result.reason || 'Not specified'
+                },
+                {
+                  name: 'Message Content',
+                  value: message.content.length > 1024 ? message.content.substring(0, 1021) + '...' : message.content
+                }
+              ];
+              
+              // Add timeout information if applied
+              if (timeoutApplied) {
+                fields.push({
+                  name: 'Timeout',
+                  value: `User timed out for ${timeoutDuration} minute${timeoutDuration !== 1 ? 's' : ''}`
+                });
+              }
+              
               await notificationChannel.send({
                 embeds: [{
-                  title: 'Moderation Action: Message Removed',
+                  title: timeoutApplied 
+                    ? 'Moderation Action: Message Removed & User Timed Out' 
+                    : 'Moderation Action: Message Removed',
                   color: 0xFF0000, // Red
                   description: `A message has been removed for violating server rules.`,
-                  fields: [
-                    {
-                      name: 'User',
-                      value: `${message.author.tag} (${message.author.id})`,
-                      inline: true
-                    },
-                    {
-                      name: 'Channel',
-                      value: `#${message.channel.name} (${message.channel.id})`,
-                      inline: true
-                    },
-                    {
-                      name: 'Timestamp',
-                      value: new Date().toISOString(),
-                      inline: true
-                    },
-                    {
-                      name: 'Reason',
-                      value: result.reason || 'Not specified'
-                    },
-                    {
-                      name: 'Message Content',
-                      value: message.content.length > 1024 ? message.content.substring(0, 1021) + '...' : message.content
-                    }
-                  ],
+                  fields: fields,
                   timestamp: new Date(),
                   footer: {
                     text: 'Discord Moderation Bot'

@@ -60,6 +60,11 @@ const argv = yargs(hideBin(process.argv))
     description: 'Comma-separated list of phrases to ignore (won\'t be sent to OpenAI)',
     type: 'string'
   })
+  .option('timeout-duration', {
+    alias: 'd',
+    description: 'Duration in minutes to timeout users when their message is deleted (0 to disable)',
+    type: 'number'
+  })
   .help()
   .alias('help', 'h')
   .argv;
@@ -83,6 +88,13 @@ const config = {
     : process.env.EXCLUDED_ROLES
       ? process.env.EXCLUDED_ROLES.split(',').map(r => r.trim())
       : [],
+  
+  // Timeout configuration
+  timeoutDuration: argv['timeout-duration'] !== undefined
+    ? argv['timeout-duration']
+    : process.env.TIMEOUT_DURATION !== undefined
+      ? parseInt(process.env.TIMEOUT_DURATION, 10)
+      : 5, // Default to 5 minutes if not specified
   
   // OpenAI configuration
   openaiApiKey: argv['openai-api-key'] || process.env.OPENAI_API_KEY,
