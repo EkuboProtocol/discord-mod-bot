@@ -78,7 +78,9 @@ function setupBot(client, config, checkMessageFn) {
     
     try {
       // Check if the button is one of our moderation buttons
-      if (interaction.customId.startsWith('ban:') || interaction.customId.startsWith('delete:')) {
+      if (interaction.customId.startsWith('ban:') || 
+          interaction.customId.startsWith('delete:') || 
+          interaction.customId.startsWith('unban:')) {
         // Extract user and guild IDs from the customId
         const parts = interaction.customId.split(':');
         const action = parts[0];
@@ -127,22 +129,86 @@ function setupBot(client, config, checkMessageFn) {
                 fields: [
                   ...originalEmbed.fields,
                   {
-                    name: 'Ban',
+                    name: 'Ban Action',
                     value: `User was banned by ${interaction.user.tag}`
                   }
                 ]
               };
               
-              // Remove the buttons since action has been taken
+              // Create unban button for the updated message
+              const unbanButton = new ButtonBuilder()
+                .setCustomId(`unban:${userId}:${guildId}`)
+                .setLabel('Unban User')
+                .setStyle(ButtonStyle.Success);
+                
+              const actionRow = new ActionRowBuilder()
+                .addComponents(unbanButton);
+              
+              // Update message with unban button
               await interaction.message.edit({ 
                 embeds: [newEmbed],
-                components: [] 
+                components: [actionRow] 
               });
             }
           } catch (error) {
             logger.error(`Failed to ban user ${userId}:`, error);
             await interaction.editReply({ 
               content: `❌ Failed to ban user: ${error.message}`,
+              ephemeral: true 
+            });
+          }
+        } else if (action === 'unban') {
+          try {
+            // Unban the user
+            await guild.members.unban(userId, { 
+              reason: `Unbanned by ${interaction.user.tag} through moderation bot` 
+            });
+            
+            await interaction.editReply({ 
+              content: `✅ Successfully unbanned user <@${userId}>.`,
+              ephemeral: true 
+            });
+            
+            // Edit the original message to update the status
+            if (interaction.message.editable) {
+              // Create a new embed based on the original one
+              const originalEmbed = interaction.message.embeds[0];
+              const newEmbed = {
+                ...originalEmbed.data,
+                title: 'Moderation Action: User Unbanned',
+                fields: [
+                  ...originalEmbed.fields,
+                  {
+                    name: 'Unban Action',
+                    value: `User was unbanned by ${interaction.user.tag}`
+                  }
+                ]
+              };
+              
+              // Create ban button (in case they need to be re-banned)
+              const banButton = new ButtonBuilder()
+                .setCustomId(`ban:${userId}:${guildId}`)
+                .setLabel('Ban User')
+                .setStyle(ButtonStyle.Danger);
+                
+              const deleteMessagesButton = new ButtonBuilder()
+                .setCustomId(`delete:${userId}:${guildId}`)
+                .setLabel('Delete Recent Messages')
+                .setStyle(ButtonStyle.Secondary);
+                
+              const actionRow = new ActionRowBuilder()
+                .addComponents(banButton, deleteMessagesButton);
+              
+              // Update message with new buttons
+              await interaction.message.edit({ 
+                embeds: [newEmbed],
+                components: [actionRow] 
+              });
+            }
+          } catch (error) {
+            logger.error(`Failed to unban user ${userId}:`, error);
+            await interaction.editReply({ 
+              content: `❌ Failed to unban user: ${error.message}`,
               ephemeral: true 
             });
           }
@@ -201,9 +267,10 @@ function setupBot(client, config, checkMessageFn) {
                 ]
               };
               
+              // Preserve existing buttons
               await interaction.message.edit({ 
                 embeds: [newEmbed],
-                components: [] 
+                components: interaction.message.components 
               });
             }
           } catch (error) {
@@ -303,37 +370,82 @@ function setupBot(client, config, checkMessageFn) {
       if (result.isSpamOrScam) {
         logger.info(`Detected spam/scam from ${message.author.tag} in #${message.channel.name}`);
         logger.info(`Message: ${message.content}`);
+        logger.info(`Severity: ${result.severity || 'medium'}`);
         logger.info(`Reason: ${result.reason}`);
         
         // Delete the message
         await message.delete();
         
-        // Timeout the user if timeout duration is greater than 0
+        // Handle different severity levels
         let timeoutApplied = false;
         let timeoutDuration = config.timeoutDuration;
+        let userBanned = false;
         
-        if (timeoutDuration > 0 && message.member) {
+        // Determine action based on severity
+        const severity = result.severity || 'medium'; // Default to medium if not specified
+        
+        if (severity === 'high') {
+          // High severity - Ban the user immediately
           try {
-            // Convert minutes to milliseconds
-            const timeoutMs = timeoutDuration * 60 * 1000;
-            
-            await message.member.timeout(
-              timeoutMs, 
-              `Automated timeout: ${result.reason || 'Posted spam/scam content'}`
-            );
-            
-            timeoutApplied = true;
-            logger.info(`Applied ${timeoutDuration} minute timeout to ${message.author.tag}`);
+            // Ban the user with a reason
+            await message.guild.members.ban(message.author.id, {
+              reason: `Automated ban: ${result.reason || 'Posted high-severity spam/scam content'}`
+            });
+            userBanned = true;
+            logger.info(`Applied automatic ban to ${message.author.tag} - high severity spam/scam`);
           } catch (error) {
-            logger.error(`Failed to timeout user ${message.author.tag}:`, error);
-            timeoutApplied = false;
+            logger.error(`Failed to ban user ${message.author.tag}:`, error);
+            userBanned = false;
+            
+            // Fall back to timeout if ban fails
+            if (timeoutDuration > 0 && message.member) {
+              try {
+                // Convert minutes to milliseconds
+                const timeoutMs = timeoutDuration * 60 * 1000;
+                
+                await message.member.timeout(
+                  timeoutMs, 
+                  `Automated timeout (fallback from ban): ${result.reason || 'Posted high-severity spam/scam content'}`
+                );
+                
+                timeoutApplied = true;
+                logger.info(`Applied ${timeoutDuration} minute timeout to ${message.author.tag} (fallback from failed ban)`);
+              } catch (fallbackError) {
+                logger.error(`Failed to timeout user ${message.author.tag} as ban fallback:`, fallbackError);
+                timeoutApplied = false;
+              }
+            }
           }
+        } else if (severity === 'medium') {
+          // Medium severity - Apply timeout (default behavior)
+          if (timeoutDuration > 0 && message.member) {
+            try {
+              // Convert minutes to milliseconds
+              const timeoutMs = timeoutDuration * 60 * 1000;
+              
+              await message.member.timeout(
+                timeoutMs, 
+                `Automated timeout: ${result.reason || 'Posted medium-severity spam/scam content'}`
+              );
+              
+              timeoutApplied = true;
+              logger.info(`Applied ${timeoutDuration} minute timeout to ${message.author.tag}`);
+            } catch (error) {
+              logger.error(`Failed to timeout user ${message.author.tag}:`, error);
+              timeoutApplied = false;
+            }
+          }
+        } else if (severity === 'low') {
+          // Low severity - Just delete the message, no timeout
+          logger.info(`Message deleted, no timeout applied for low-severity content from ${message.author.tag}`);
         }
         
-        // Notify the channel that a message was removed and user was timed out
-        // Note: message.author is already a mention/clickable by default in this context
+        // Notify the channel that a message was removed and user was timed out or banned
         let notificationText = `⚠️ Removed a message from ${message.author} that violated server rules. Reason: ${result.reason}`;
-        if (timeoutApplied) {
+        
+        if (userBanned) {
+          notificationText = `🚫 Banned user ${message.author} for posting high-severity spam/scam. Reason: ${result.reason}`;
+        } else if (timeoutApplied) {
           notificationText += ` User has been timed out for ${timeoutDuration} minute${timeoutDuration !== 1 ? 's' : ''}.`;
         }
         
@@ -367,6 +479,11 @@ function setupBot(client, config, checkMessageFn) {
                   inline: true
                 },
                 {
+                  name: 'Severity',
+                  value: severity.charAt(0).toUpperCase() + severity.slice(1), // Capitalize first letter
+                  inline: true
+                },
+                {
                   name: 'Timestamp',
                   value: new Date().toISOString(),
                   inline: true
@@ -381,34 +498,73 @@ function setupBot(client, config, checkMessageFn) {
                 }
               ];
               
-              // Add timeout information if applied
-              if (timeoutApplied) {
+              // Add action information
+              if (userBanned) {
                 fields.push({
-                  name: 'Timeout',
+                  name: 'Action Taken',
+                  value: `User was automatically banned (high-severity spam/scam)`
+                });
+              } else if (timeoutApplied) {
+                fields.push({
+                  name: 'Action Taken',
                   value: `User timed out for ${timeoutDuration} minute${timeoutDuration !== 1 ? 's' : ''}`
+                });
+              } else {
+                fields.push({
+                  name: 'Action Taken',
+                  value: 'Message deleted (no timeout applied)'
                 });
               }
               
-              // Create action buttons
-              const banButton = new ButtonBuilder()
-                .setCustomId(`ban:${message.author.id}:${message.guild.id}`)
-                .setLabel('Ban User')
-                .setStyle(ButtonStyle.Danger);
+              // Create action buttons based on severity and actions taken
+              const actionRow = new ActionRowBuilder();
               
-              const deleteMessagesButton = new ButtonBuilder()
-                .setCustomId(`delete:${message.author.id}:${message.guild.id}`)
-                .setLabel('Delete Recent Messages')
-                .setStyle(ButtonStyle.Secondary);
+              if (userBanned) {
+                // For banned users, add unban button
+                const unbanButton = new ButtonBuilder()
+                  .setCustomId(`unban:${message.author.id}:${message.guild.id}`)
+                  .setLabel('Unban User')
+                  .setStyle(ButtonStyle.Success);
+                  
+                const deleteMessagesButton = new ButtonBuilder()
+                  .setCustomId(`delete:${message.author.id}:${message.guild.id}`)
+                  .setLabel('Delete Recent Messages')
+                  .setStyle(ButtonStyle.Secondary);
+                  
+                actionRow.addComponents(unbanButton, deleteMessagesButton);
+              } else {
+                // Standard buttons for non-banned users
+                const banButton = new ButtonBuilder()
+                  .setCustomId(`ban:${message.author.id}:${message.guild.id}`)
+                  .setLabel('Ban User')
+                  .setStyle(ButtonStyle.Danger);
                 
-              const actionRow = new ActionRowBuilder()
-                .addComponents(banButton, deleteMessagesButton);
+                const deleteMessagesButton = new ButtonBuilder()
+                  .setCustomId(`delete:${message.author.id}:${message.guild.id}`)
+                  .setLabel('Delete Recent Messages')
+                  .setStyle(ButtonStyle.Secondary);
+                  
+                actionRow.addComponents(banButton, deleteMessagesButton);
+              }
+              
+              // Determine title and color based on actions taken
+              let title, color;
+              
+              if (userBanned) {
+                title = 'Moderation Action: User Automatically Banned';
+                color = 0x992D22; // Dark red
+              } else if (timeoutApplied) {
+                title = 'Moderation Action: Message Removed & User Timed Out';
+                color = 0xE74C3C; // Lighter red
+              } else {
+                title = 'Moderation Action: Message Removed';
+                color = 0xF1C40F; // Yellow/amber for lower severity
+              }
               
               await notificationChannel.send({
                 embeds: [{
-                  title: timeoutApplied 
-                    ? 'Moderation Action: Message Removed & User Timed Out' 
-                    : 'Moderation Action: Message Removed',
-                  color: 0xFF0000, // Red
+                  title: title,
+                  color: color,
                   description: `A message has been removed for violating server rules.`,
                   fields: fields,
                   timestamp: new Date(),
@@ -423,8 +579,6 @@ function setupBot(client, config, checkMessageFn) {
             logger.error('Failed to send notification to the notification channel:', error);
           }
         }
-        
-        // TODO: Implement ban logic for repeat offenders if required
       }
     } catch (error) {
       logger.error(`Error processing message from ${message.author.tag}:`, error);
