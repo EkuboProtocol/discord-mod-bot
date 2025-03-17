@@ -52,15 +52,15 @@ async function checkMessage(messageContent, previousMessages = []) {
     1. Messages containing suspicious links or asking users to open tickets 
     2. Messages containing Discord invite links to other servers
     3. Phishing attempts asking for personal information or wallet addresses
-    4. Impersonation of staff or team members with malicious intent
+    4. ANY impersonation of staff or team members (including usernames/nicknames containing "team" or "support")
     5. Messages that clearly aim to steal funds or personal information
+    6. Messages asking users to DM for support instead of using public channels
+    7. Generic job-seeking messages that appear to be copy-pasted
     
     MEDIUM SEVERITY (Spam that is problematic but not clearly malicious):
-    1. Messages asking users to DM for support instead of using public channels
-    2. Generic job-seeking messages that appear to be copy-pasted
-    3. Messages asking who to contact for unspecified business/partnerships
-    4. Messages promising rewards, giveaways, or airdrops that seem suspicious
-    5. Unsolicited help or support messages that seem generic
+    1. Messages asking who to contact for unspecified business/partnerships
+    2. Messages promising rewards, giveaways, or airdrops that seem suspicious
+    3. Unsolicited help or support messages that seem generic
     
     LOW SEVERITY (Borderline spam that should be removed but user doesn't need timeout):
     1. Excessive self-promotion 
