@@ -22,16 +22,12 @@ workers:
         type: SECRET
         scope: RUN_TIME
       - key: WELCOME_CHANNEL_ID
-        value: '1119209474851356716'
         scope: RUN_TIME
       - key: NOTIFICATION_CHANNEL_ID
-        value: '1119209950351204443'
         scope: RUN_TIME
       - key: EXCLUDED_ROLES
-        value: 1119220820506583080,1120203566007713913,1205155966778343484
         scope: RUN_TIME
       - key: TIMEOUT_DURATION
-        value: '10080'
         scope: RUN_TIME
       - key: OPENAI_MODEL
         value: gpt-4o-mini
@@ -40,7 +36,7 @@ workers:
         value: gm
         scope: RUN_TIME
       - key: CONTEXT_MESSAGE_COUNT
-        value: '5'
+        value: '10'
         scope: RUN_TIME
       - key: LOG_LEVEL
         value: info

@@ -9,14 +9,22 @@ const openai = new OpenAI({
   apiKey: config.openaiApiKey
 });
 
+function formatRolesForDisplay(roles) {
+  if (!roles || roles.length === 0) {
+    return 'None';
+  }
+  return roles.join(', ');
+}
+
 /**
  * Check if a message contains spam or scam content, considering channel context
  * 
  * @param {string} messageContent - The content of the message to check
  * @param {Array<Object>} previousMessages - Previous messages in the channel for context
+ * @param {Object|null} currentMessageMeta - Metadata about the current message author (roles, etc.)
  * @returns {Promise<Object>} - Result object with isSpamOrScam flag, severity level, and reason
  */
-async function checkMessage(messageContent, previousMessages = []) {
+async function checkMessage(messageContent, previousMessages = [], currentMessageMeta = null) {
   try {
     // Log full message being analyzed
     logger.debug('=========== BEGIN MESSAGE ANALYSIS ===========');
@@ -26,7 +34,8 @@ async function checkMessage(messageContent, previousMessages = []) {
     
     // Format previous messages for context
     const formattedPreviousMessages = previousMessages.map(msg => {
-      return `[${msg.author}]: ${msg.content}`;
+      const rolesText = formatRolesForDisplay(msg.roles);
+      return `[${msg.author} | Roles: ${rolesText}]: ${msg.content}`;
     }).join('\n');
     
     // Log previous messages if available
@@ -105,10 +114,19 @@ async function checkMessage(messageContent, previousMessages = []) {
       });
     }
     
+    let currentMessageContent = messageContent;
+    if (currentMessageMeta) {
+      const rolesText = formatRolesForDisplay(currentMessageMeta.roles);
+      const authorLine = currentMessageMeta.author
+        ? `Author: ${currentMessageMeta.author}\n`
+        : '';
+      currentMessageContent = `${authorLine}Roles: ${rolesText}\nMessage: ${messageContent}`;
+    }
+    
     // Add the current message to analyze
     messages.push({
       role: "user",
-        content: messageContent
+      content: currentMessageContent
     });
     
     // Log full messages array being sent to OpenAI

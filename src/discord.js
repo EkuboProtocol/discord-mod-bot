@@ -4,6 +4,21 @@ const { logger } = require('./logger');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 /**
+ * Return a list of user-friendly role names for a guild member
+ * @param {import('discord.js').GuildMember | null | undefined} member
+ * @returns {string[]}
+ */
+function getRoleNames(member) {
+  if (!member || !member.roles) {
+    return [];
+  }
+
+  return member.roles.cache
+    .filter(role => role.name !== '@everyone')
+    .map(role => role.name);
+}
+
+/**
  * Sets up the Discord bot with all necessary event handlers
  * @param {Client} client - Discord.js Client instance
  * @param {Object} config - Bot configuration object
@@ -354,6 +369,7 @@ function setupBot(client, config, checkMessageFn) {
           
           previousMessages = messages.map(msg => ({
             author: msg.author.tag,
+            roles: getRoleNames(msg.member),
             content: msg.content,
             timestamp: msg.createdAt
           })).reverse(); // Oldest first
@@ -365,7 +381,15 @@ function setupBot(client, config, checkMessageFn) {
       }
       
       // Send to AI for checking with context
-      const result = await checkMessageFn(message.content, previousMessages);
+      const authorRoles = getRoleNames(message.member);
+      const result = await checkMessageFn(
+        message.content,
+        previousMessages,
+        {
+          author: message.author.tag,
+          roles: authorRoles
+        }
+      );
       
       if (result.isSpamOrScam) {
         logger.info(`Detected spam/scam from ${message.author.tag} in #${message.channel.name}`);
