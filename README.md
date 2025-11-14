@@ -113,6 +113,39 @@ node src/index.js --token=your_token --server=your_server_id --channels=channel1
    sudo systemctl status discord-mod-bot
    ```
 
+## Deploying to DigitalOcean App Platform
+
+The repository includes a ready-to-use App Platform spec at `.do/app.yaml` that deploys the bot as a worker service.
+
+1. Install and authenticate [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/):
+   ```bash
+   doctl auth init
+   ```
+2. Review `.do/app.yaml` and update the GitHub repo/branch or worker sizing if needed.
+3. Create the app:
+   ```bash
+   doctl apps create --spec .do/app.yaml
+   ```
+4. After the app is created, add the required environment variables (Discord token, server ID, OpenAI key, etc.) under **Settings → Environment Variables** or by updating the spec and running:
+   ```bash
+   doctl apps update <APP_ID> --spec .do/app.yaml
+   ```
+
+### Environment Variables for App Platform
+
+The spec lists the variables the worker expects:
+
+- `DISCORD_TOKEN` *(secret)* – Discord bot token
+- `DISCORD_SERVER_ID` – ID of the Discord server to moderate
+- `OPENAI_API_KEY` *(secret)* – OpenAI API key
+- `OPENAI_MODEL` – Model to use (defaults to `gpt-3.5-turbo`)
+- `LOG_LEVEL` – Logging verbosity (`error`, `warn`, `info`, `debug`)
+- `CONTEXT_MESSAGE_COUNT` – Number of prior messages to send for context
+- `TIMEOUT_DURATION` – Timeout duration in minutes (set `0` to disable)
+- `MODERATED_CHANNELS`, `EXCLUDED_CHANNELS`, `EXCLUDED_ROLES`, `WELCOME_CHANNEL_ID`, `NOTIFICATION_CHANNEL_ID`, `IGNORED_PHRASES` – Optional fine-tuning values; leave blank to use defaults
+
+Remember to keep secret values (Discord/OpenAI tokens) stored as **Secret** scope variables in App Platform so they are not committed to the repository.
+
 ## Configuration
 
 The bot can be configured using environment variables or command line arguments. Command line arguments take precedence over environment variables.
