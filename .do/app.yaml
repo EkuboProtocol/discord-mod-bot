@@ -13,18 +13,12 @@ workers:
     run_command: npm start
     envs:
       - key: DISCORD_TOKEN
-        value: >-
-          EV[1:r65zBA+7bMNz7nTeULoWY0t5tTjMuvFH:isqnmrxUY1XC4eV/3oUda53I6N3YXlQFKVYS8ZLrUF4QfNNTqoZmzvLbz1uUXahkgIpuLC8vcPp9xyoI1livQS9NuDmsjCVaKyVTIBaDr93Jf7V93k2Krw==]
         type: SECRET
         scope: RUN_TIME
       - key: DISCORD_SERVER_ID
-        value: >-
-          EV[1:LgveFvx6MNEaF5QwZrnGc/UzbXYU3hIa:AwsVEx4oBW05ML1d/8yBd4JQ3RkpRUtiTFaZLJ4RbSY5/zc=]
         type: SECRET
         scope: RUN_TIME
       - key: OPENAI_API_KEY
-        value: >-
-          EV[1:VZPH43AXxEneE1e5ptpe9u8PQgaHOUVK:G8X4bXC58SkNBA1pzi1b/p12CDxay2zl+RO1ECdlvPVpj4Uvz4VbjgpnvtZSdrwiigk2KxMT8uJ8vnb1eCzFL2eS8dxWcduSx6StGG4Uifoj0xfwdEiyx51/Reibcj30f4s/3JxIqScUwIbtJxdm1VPlqf13UfOX4pR2zenqpmI7u7B9EU89yAvzCjSEXg2upUttXV+2WvO0g7qA/JveRCAfgpb2SL0U8aJhLWt0oVG0J++95DitO5YLe2Uh]
         type: SECRET
         scope: RUN_TIME
       - key: WELCOME_CHANNEL_ID
@@ -49,5 +43,5 @@ workers:
         value: '5'
         scope: RUN_TIME
       - key: LOG_LEVEL
-        value: debug
+        value: info
         scope: RUN_TIME
