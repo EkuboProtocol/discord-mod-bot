@@ -8,7 +8,7 @@ workers:
     source_dir: /
     environment_slug: node-js
     instance_count: 1
-    instance_size_slug: basic-xxs
+    instance_size_slug: basic-xs
     build_command: npm install
     run_command: npm start
     envs:
