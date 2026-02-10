@@ -465,6 +465,10 @@ function setupBot(client, config, checkMessageFn) {
         }
         
         // Notify the channel that a message was removed and user was timed out or banned
+        // Only allow mentions for users tagged in the offending message.
+        const mentionedUserIds = [...message.mentions.users.keys()]
+          .filter(id => id !== message.author.id);
+
         let notificationText = `⚠️ Removed a message from ${message.author} that violated server rules. Reason: ${result.reason}`;
         
         if (userBanned) {
@@ -472,8 +476,19 @@ function setupBot(client, config, checkMessageFn) {
         } else if (timeoutApplied) {
           notificationText += ` User has been timed out for ${timeoutDuration} minute${timeoutDuration !== 1 ? 's' : ''}.`;
         }
+
+        if (mentionedUserIds.length > 0) {
+          const taggedUsers = mentionedUserIds.map(id => `<@${id}>`).join(' ');
+          notificationText += ` Heads up to tagged user${mentionedUserIds.length === 1 ? '' : 's'}: ${taggedUsers}`;
+        }
         
-        const notificationMsg = await message.channel.send(notificationText);
+        const notificationMsg = await message.channel.send({
+          content: notificationText,
+          allowedMentions: {
+            parse: [],
+            users: mentionedUserIds
+          }
+        });
         
         // Delete the notification after a few seconds to keep the channel clean
         setTimeout(() => {
@@ -596,7 +611,8 @@ function setupBot(client, config, checkMessageFn) {
                     text: 'Discord Moderation Bot'
                   }
                 }],
-                components: [actionRow]
+                components: [actionRow],
+                allowedMentions: { parse: [] }
               });
             }
           } catch (error) {
