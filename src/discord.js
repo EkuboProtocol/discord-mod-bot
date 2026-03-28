@@ -19,6 +19,35 @@ function getRoleNames(member) {
 }
 
 /**
+ * Returns true when Discord reports the target message no longer exists.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isUnknownMessageError(error) {
+  return Boolean(error && typeof error === 'object' && error.code === 10008);
+}
+
+/**
+ * Delete a Discord message, ignoring the "already deleted" race.
+ * @param {import('discord.js').Message} message
+ * @param {string} context
+ * @returns {Promise<boolean>}
+ */
+async function deleteMessageIfPresent(message, context) {
+  try {
+    await message.delete();
+    return true;
+  } catch (error) {
+    if (isUnknownMessageError(error)) {
+      logger.info(`${context}: message was already deleted`);
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Sets up the Discord bot with all necessary event handlers
  * @param {Client} client - Discord.js Client instance
  * @param {Object} config - Bot configuration object
@@ -397,8 +426,8 @@ function setupBot(client, config, checkMessageFn) {
         logger.info(`Severity: ${result.severity || 'medium'}`);
         logger.info(`Reason: ${result.reason}`);
         
-        // Delete the message
-        await message.delete();
+        // Delete the message. Another moderator or automod may have removed it first.
+        await deleteMessageIfPresent(message, `Could not delete offending message from ${message.author.tag}`);
         
         // Handle different severity levels
         let timeoutApplied = false;
@@ -492,7 +521,8 @@ function setupBot(client, config, checkMessageFn) {
         
         // Delete the notification after a few seconds to keep the channel clean
         setTimeout(() => {
-          notificationMsg.delete().catch(e => logger.warn('Could not delete notification message:', e));
+          deleteMessageIfPresent(notificationMsg, 'Could not delete notification message')
+            .catch(error => logger.warn('Could not delete notification message:', error));
         }, 10000);
         
         // Send detailed notification to the designated notification channel
