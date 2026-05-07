@@ -16,6 +16,17 @@ function formatRolesForDisplay(roles) {
   return roles.join(', ');
 }
 
+function isModernReasoningModel(model) {
+  const normalizedModel = model.toLowerCase();
+  return normalizedModel.startsWith('gpt-5') || /^o\d/.test(normalizedModel);
+}
+
+function getTokenLimitParam(model, tokenLimit) {
+  return isModernReasoningModel(model)
+    ? { max_completion_tokens: tokenLimit }
+    : { max_tokens: tokenLimit };
+}
+
 /**
  * Check if a message contains spam or scam content, considering channel context
  * 
@@ -101,7 +112,7 @@ async function checkMessage(messageContent, previousMessages = [], currentMessag
     // Construct messages array for the API call
     const messages = [
       {
-        role: "system",
+        role: isModernReasoningModel(config.openaiModel) ? "developer" : "system",
         content: systemPrompt
       }
     ];
@@ -138,7 +149,9 @@ async function checkMessage(messageContent, previousMessages = [], currentMessag
     logger.debug('OpenAI request parameters:');
     logger.debug(`Model: ${config.openaiModel}`);
     logger.debug(`Temperature: 0.1`);
-    logger.debug(`Max tokens: 200`); // Increased token limit for more detailed response
+    const tokenLimitParam = getTokenLimitParam(config.openaiModel, 200);
+    const tokenLimitParamName = Object.keys(tokenLimitParam)[0];
+    logger.debug(`${tokenLimitParamName}: 200`); // Increased token limit for more detailed response
     logger.debug(`Response format: JSON object`);
     logger.debug('=============================================');
     
@@ -148,7 +161,7 @@ async function checkMessage(messageContent, previousMessages = [], currentMessag
       model: config.openaiModel,
       messages: messages,
       temperature: 0.1,
-      max_tokens: 200, // Increased for more detailed responses
+      ...tokenLimitParam,
       response_format: { type: "json_object" }
     });
     
