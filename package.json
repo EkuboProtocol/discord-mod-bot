@@ -4,7 +4,9 @@
   "description": "Discord bot for moderating messages using AI",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "lint": "eslint .",
+    "lint:prune": "eslint . --prune-suppressions"
   },
   "repository": {
     "type": "git",
