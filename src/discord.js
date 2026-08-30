@@ -2,6 +2,7 @@
 
 const { logger } = require('./logger');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { startPresence } = require('./presence');
 
 /**
  * Return a list of user-friendly role names for a guild member
@@ -70,7 +71,10 @@ function setupBot(client, config, checkMessageFn) {
     }
     
     logger.info(`Connected to server: ${targetGuild.name}`);
-    
+
+    // Publish protocol stats as the bot's status, refreshed on an interval.
+    startPresence(client, config.presence);
+
     // Log which channels are being moderated
     if (!config.moderatedChannels) {
       logger.info('Moderating all channels in the server');

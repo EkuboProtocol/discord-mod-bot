@@ -142,7 +142,16 @@ const config = {
   contextMessageCount: argv['context-messages'] || parseInt(process.env.CONTEXT_MESSAGE_COUNT || '5', 10),
   
   // Logging configuration
-  logLevel: argv['log-level'] || process.env.LOG_LEVEL || 'info'
+  logLevel: argv['log-level'] || process.env.LOG_LEVEL || 'info',
+
+  // Rich presence: protocol stats published as the bot's Discord status.
+  // Every field defaults, so the feature needs no new deployment config.
+  presence: {
+    enabled: (process.env.PRESENCE_ENABLED || 'true').toLowerCase() !== 'false',
+    apiBase: process.env.EKUBO_API_BASE || 'https://prod-api.ekubo.org',
+    intervalMs: parseInt(process.env.PRESENCE_INTERVAL_MS || '300000', 10),
+    timeoutMs: parseInt(process.env.PRESENCE_TIMEOUT_MS || '10000', 10)
+  }
 };
 
 // Validation
