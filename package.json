@@ -2,9 +2,12 @@
   "name": "discord-mod-bot",
   "version": "1.0.0",
   "description": "Discord bot for moderating messages using AI",
-  "main": "src/index.js",
+  "type": "module",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions"
   },
@@ -26,13 +29,16 @@
   "homepage": "https://github.com/EkuboProtocol/discord-mod-bot#readme",
   "dependencies": {
     "discord.js": "^14.14.1",
-    "dotenv": "^16.3.1",
     "openai": "^4.20.1",
     "winston": "^3.11.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/yargs": "^17.0.33",
     "eslint": "^9.21.0",
-    "prettier": "^3.5.3"
+    "prettier": "^3.5.3",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0"
   }
 }

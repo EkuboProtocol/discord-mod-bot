@@ -1,7 +1,16 @@
-'use strict';
+import { ActivityType, type Client } from 'discord.js';
+import { logger } from './logger';
+import type { PresenceConfig } from './config';
 
-const { ActivityType } = require('discord.js');
-const { logger } = require('./logger');
+interface PriceInfo {
+  price: number;
+  changePct: number | null;
+}
+
+interface PriceEntry {
+  usdPrice: number;
+  decimals: number;
+}
 
 // Ekubo mainnet (chain 1) EKUBO token. The presence line is protocol-wide, so
 // the only per-token lookup is the price of EKUBO itself.
@@ -10,11 +19,8 @@ const EKUBO_ADDRESS = '0x04c46e830bb56ce22735d5d8fc9cb90309317d0f';
 
 /**
  * Fetch and parse JSON, failing fast rather than hanging the presence tick.
- * @param {string} url
- * @param {number} timeoutMs
- * @returns {Promise<any>}
  */
-async function fetchJson(url, timeoutMs) {
+async function fetchJson(url: string, timeoutMs: number): Promise<any> {
   const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok) {
     throw new Error(`GET ${url} -> ${response.status}`);
@@ -28,11 +34,8 @@ async function fetchJson(url, timeoutMs) {
  * The live price comes from the token endpoint and the baseline from the oldest
  * bucket of the 24h history, so the percentage is genuinely "vs 24h ago" rather
  * than "vs the start of whichever bucket we happened to land in".
- * @param {string} apiBase
- * @param {number} timeoutMs
- * @returns {Promise<{price: number, changePct: number | null}>}
  */
-async function fetchPrice(apiBase, timeoutMs) {
+async function fetchPrice(apiBase: string, timeoutMs: number): Promise<PriceInfo> {
   const tokenUrl = `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}`;
   const historyUrl =
     `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}/price-history` +
@@ -59,11 +62,9 @@ async function fetchPrice(apiBase, timeoutMs) {
  * Addresses are keyed by their numeric value because the volume feed abbreviates
  * native ETH as "0x0" while the token list spells out the zero address; a plain
  * string compare would silently drop the single largest row.
- * @param {Array<Record<string, any>>} tokens
- * @returns {Map<string, {usdPrice: number, decimals: number}>}
  */
-function buildPriceMap(tokens) {
-  const map = new Map();
+export function buildPriceMap(tokens: Array<Record<string, any>>): Map<string, PriceEntry> {
+  const map = new Map<string, PriceEntry>();
 
   for (const token of tokens) {
     if (token.usd_price === null || token.usd_price === undefined) {
@@ -78,12 +79,13 @@ function buildPriceMap(tokens) {
 
 /**
  * Sum one day's rows into a USD total, skipping tokens with no known price.
- * @param {Array<Record<string, any>>} rows
- * @param {Map<string, {usdPrice: number, decimals: number}>} priceMap
- * @param {string} day - `YYYY-MM-DD`
- * @returns {number}
+ * `day` is `YYYY-MM-DD`.
  */
-function sumDayVolumeUsd(rows, priceMap, day) {
+export function sumDayVolumeUsd(
+  rows: Array<Record<string, any>>,
+  priceMap: Map<string, PriceEntry>,
+  day: string
+): number {
   let total = 0;
 
   for (const row of rows) {
@@ -105,10 +107,8 @@ function sumDayVolumeUsd(rows, priceMap, day) {
  *
  * The feed always carries a bucket for the current day, which is partial and
  * would read as a sudden collapse in volume if we published it.
- * @param {Array<Record<string, any>>} rows
- * @returns {string | null}
  */
-function latestCompleteDay(rows) {
+export function latestCompleteDay(rows: Array<Record<string, any>>): string | null {
   const today = new Date().toISOString().slice(0, 10);
   const days = rows.map(row => row.date.slice(0, 10)).filter(day => day < today);
 
@@ -119,11 +119,8 @@ function latestCompleteDay(rows) {
  * Protocol-wide swap volume in USD for the last complete UTC day, summed across
  * every chain. Verified against DefiLlama's reported 24h figure to within ~1.5%,
  * which is what rules out the usual both-sides-of-the-swap double count.
- * @param {string} apiBase
- * @param {number} timeoutMs
- * @returns {Promise<number | null>}
  */
-async function fetchVolumeUsd(apiBase, timeoutMs) {
+async function fetchVolumeUsd(apiBase: string, timeoutMs: number): Promise<number | null> {
   const [overview, tokens] = await Promise.all([
     fetchJson(`${apiBase}/overview/volume`, timeoutMs),
     fetchJson(`${apiBase}/tokens`, timeoutMs)
@@ -139,10 +136,9 @@ async function fetchVolumeUsd(apiBase, timeoutMs) {
 }
 
 /**
- * @param {number} value
- * @returns {string} e.g. `$25.7M`
+ * Compact USD, e.g. `$25.7M`.
  */
-function formatUsdCompact(value) {
+export function formatUsdCompact(value: number): string {
   if (value >= 1e9) {
     return `$${(value / 1e9).toFixed(1)}B`;
   }
@@ -156,10 +152,9 @@ function formatUsdCompact(value) {
 }
 
 /**
- * @param {number | null} changePct
- * @returns {string} signed movement, e.g. `▲2.5%`
+ * Signed movement, e.g. `▲2.5%`.
  */
-function formatChange(changePct) {
+export function formatChange(changePct: number | null): string {
   if (changePct === null || !Number.isFinite(changePct)) {
     return '';
   }
@@ -170,12 +165,9 @@ function formatChange(changePct) {
 
 /**
  * Compose the status line, e.g. `EKUBO $0.4807 ▲2.5% · 24h vol $25.7M`.
- * @param {{price: number, changePct: number | null} | null} priceInfo
- * @param {number | null} volumeUsd
- * @returns {string}
  */
-function formatStatus(priceInfo, volumeUsd) {
-  const parts = [];
+export function formatStatus(priceInfo: PriceInfo | null, volumeUsd: number | null): string {
+  const parts: string[] = [];
 
   if (priceInfo && Number.isFinite(priceInfo.price)) {
     parts.push(`EKUBO $${priceInfo.price.toFixed(4)}${formatChange(priceInfo.changePct)}`);
@@ -192,11 +184,8 @@ function formatStatus(priceInfo, volumeUsd) {
  *
  * Bots cannot use Rich Presence (that is a local-IPC feature of the desktop
  * client); the gateway equivalent is a custom activity, which is what this sets.
- * @param {import('discord.js').Client} client
- * @param {Object} presenceConfig
- * @returns {Promise<void>}
  */
-async function updatePresence(client, presenceConfig) {
+export async function updatePresence(client: Client, presenceConfig: PresenceConfig): Promise<void> {
   const { apiBase, timeoutMs } = presenceConfig;
 
   const [priceInfo, volumeUsd] = await Promise.all([
@@ -210,7 +199,7 @@ async function updatePresence(client, presenceConfig) {
     return;
   }
 
-  client.user.setPresence({
+  client.user?.setPresence({
     activities: [{ type: ActivityType.Custom, name: 'ekubo-stats', state: status }],
     status: 'online'
   });
@@ -222,15 +211,13 @@ async function updatePresence(client, presenceConfig) {
  *
  * Moderation is the bot's actual job, so a flaky stats endpoint must never take
  * the process down or clear a status that was previously fine.
- * @param {import('discord.js').Client} client
- * @param {Object} presenceConfig
- * @returns {Promise<void>}
  */
-async function safeUpdatePresence(client, presenceConfig) {
+async function safeUpdatePresence(client: Client, presenceConfig: PresenceConfig): Promise<void> {
   try {
     await updatePresence(client, presenceConfig);
   } catch (error) {
-    logger.warn(`Presence update failed, keeping previous status: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Presence update failed, keeping previous status: ${message}`);
   }
 }
 
@@ -240,11 +227,11 @@ async function safeUpdatePresence(client, presenceConfig) {
  * The enabled check lives here rather than at the call site so that wiring this
  * into the ready handler adds no branch to it, keeping the complexity ratchet in
  * AGENTS.md happy.
- * @param {import('discord.js').Client} client
- * @param {Object} presenceConfig
- * @returns {NodeJS.Timeout | null}
  */
-function startPresence(client, presenceConfig) {
+export function startPresence(
+  client: Client,
+  presenceConfig: PresenceConfig | undefined
+): ReturnType<typeof setInterval> | null {
   if (!presenceConfig || !presenceConfig.enabled) {
     logger.info('Presence updates disabled');
     return null;
@@ -261,13 +248,3 @@ function startPresence(client, presenceConfig) {
   return timer;
 }
 
-module.exports = {
-  startPresence,
-  updatePresence,
-  formatStatus,
-  formatUsdCompact,
-  formatChange,
-  buildPriceMap,
-  sumDayVolumeUsd,
-  latestCompleteDay
-};

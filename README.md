@@ -1,6 +1,6 @@
 # Discord Moderation Bot
 
-A Node.js bot for Discord that uses AI to automatically moderate messages and remove spam or scam content from your server.
+A Bun + TypeScript bot for Discord that uses AI to automatically moderate messages and remove spam or scam content from your server.
 
 ## Features
 
@@ -16,7 +16,7 @@ A Node.js bot for Discord that uses AI to automatically moderate messages and re
 
 ## Requirements
 
-- Node.js 16.x or higher
+- [Bun](https://bun.sh) 1.2 or higher
 - Discord Bot Token (with appropriate permissions)
 - OpenAI API Key
 - Ubuntu server (for systemd service setup)
@@ -31,7 +31,7 @@ A Node.js bot for Discord that uses AI to automatically moderate messages and re
 
 2. Install dependencies:
    ```bash
-   npm install
+   bun install
    ```
 
 3. Create a `.env` file based on the example:
@@ -53,10 +53,18 @@ A Node.js bot for Discord that uses AI to automatically moderate messages and re
 
 ### Running Manually
 
-Start the bot directly using Node.js:
+Start the bot directly with Bun:
 
 ```bash
-node src/index.js
+bun run src/index.ts
+```
+
+TypeScript is executed as-is; there is no build step. To check types and the
+complexity gate the way CI does:
+
+```bash
+bun run typecheck
+bun run lint
 ```
 
 ### Command Line Arguments
@@ -86,7 +94,7 @@ Options:
 
 Example:
 ```bash
-node src/index.js --token=your_token --server=your_server_id --channels=channel1,channel2 --excluded-roles=role1,role2 --openai-model=gpt-4
+bun run src/index.ts --token=your_token --server=your_server_id --channels=channel1,channel2 --excluded-roles=role1,role2 --openai-model=gpt-4
 ```
 
 ### Setting Up as a Systemd Service

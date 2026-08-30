@@ -1,10 +1,10 @@
 {
-  "src/ai.js": {
+  "src/ai.ts": {
     "complexity": {
       "count": 1
     }
   },
-  "src/discord.js": {
+  "src/discord.ts": {
     "complexity": {
       "count": 2
     }

@@ -2,6 +2,11 @@
 // the single rule here is a guardrail against functions growing unreviewably
 // branchy, and keeping the config to one rule means a failure is always
 // actionable and never a style argument.
+//
+// Type errors are not this file's job — `bun run typecheck` (tsc --noEmit) is
+// the gate for those, so the parser here is only used to read TypeScript syntax.
+import tseslint from "typescript-eslint";
+
 const rules = { complexity: ["error", 10] };
 
 export default [
@@ -9,21 +14,11 @@ export default [
     ignores: ["node_modules/**"],
   },
   {
-    files: ["**/*.js"],
+    files: ["**/*.ts"],
     languageOptions: {
+      parser: tseslint.parser,
       ecmaVersion: "latest",
-      sourceType: "commonjs",
-      globals: {
-        require: "readonly",
-        module: "writable",
-        process: "readonly",
-        console: "readonly",
-        __dirname: "readonly",
-        setTimeout: "readonly",
-        setInterval: "readonly",
-        clearTimeout: "readonly",
-        clearInterval: "readonly",
-      },
+      sourceType: "module",
     },
     rules,
   },

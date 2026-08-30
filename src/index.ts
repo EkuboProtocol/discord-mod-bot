@@ -1,11 +1,10 @@
-#!/usr/bin/env node
-'use strict';
+#!/usr/bin/env bun
 
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
-const { config } = require('./config');
-const { setupBot } = require('./discord');
-const { checkMessage } = require('./ai');
-const { initLogger, logger } = require('./logger');
+import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { config } from './config';
+import { setupBot } from './discord';
+import { checkMessage } from './ai';
+import { initLogger, logger } from './logger';
 
 // Initialize logger
 initLogger(config.logLevel);
@@ -53,12 +52,12 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', (error: Error) => {
   logger.error('Uncaught Exception:', error);
   // Keep the process running despite errors
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
   // Keep the process running despite errors
 });

@@ -1,11 +1,7 @@
-'use strict';
+import yargs from 'yargs/yargs';
+import { hideBin } from 'yargs/helpers';
 
-const dotenv = require('dotenv');
-const yargs = require('yargs/yargs');
-const { hideBin } = require('yargs/helpers');
-
-// Load environment variables from .env file
-dotenv.config();
+// Bun loads .env automatically, so there is no dotenv call here.
 
 // Parse command line arguments
 const argv = yargs(hideBin(process.argv))
@@ -77,21 +73,44 @@ const argv = yargs(hideBin(process.argv))
   })
   .help()
   .alias('help', 'h')
-  .argv;
+  .parseSync();
+
+export interface PresenceConfig {
+  enabled: boolean;
+  apiBase: string;
+  intervalMs: number;
+  timeoutMs: number;
+}
+
+export interface Config {
+  token: string;
+  serverId: string;
+  moderatedChannels: string[] | undefined;
+  excludedChannels: string[];
+  excludedRoles: string[];
+  timeoutDuration: number;
+  openaiApiKey: string;
+  openaiModel: string;
+  notificationChannelId: string | undefined;
+  ignoredPhrases: string[];
+  contextMessageCount: number;
+  logLevel: string;
+  presence: PresenceConfig;
+}
 
 // Configuration with priority: CLI args > Environment variables > Defaults
-const config = {
+const rawConfig = {
   // Discord configuration
   token: argv.token || process.env.DISCORD_TOKEN,
   serverId: argv.server || process.env.DISCORD_SERVER_ID,
-  
+
   // Channels to moderate (undefined means all channels)
-  moderatedChannels: argv.channels 
-    ? argv.channels.split(',').map(c => c.trim()) 
-    : process.env.MODERATED_CHANNELS 
+  moderatedChannels: argv.channels
+    ? argv.channels.split(',').map(c => c.trim())
+    : process.env.MODERATED_CHANNELS
       ? process.env.MODERATED_CHANNELS.split(',').map(c => c.trim())
       : undefined,
-  
+
   // Channels to exclude from moderation
   excludedChannels: (() => {
     // Start with the excluded channels from CLI/env
@@ -100,47 +119,47 @@ const config = {
       : process.env.EXCLUDED_CHANNELS
         ? process.env.EXCLUDED_CHANNELS.split(',').map(c => c.trim())
         : [];
-    
+
     // Add welcome channel if specified
     const welcomeChannel = argv['welcome-channel'] || process.env.WELCOME_CHANNEL_ID;
     if (welcomeChannel && !excluded.includes(welcomeChannel)) {
       excluded.push(welcomeChannel);
     }
-    
+
     return excluded;
   })(),
-  
+
   // Roles to exclude from moderation
   excludedRoles: argv['excluded-roles']
     ? argv['excluded-roles'].split(',').map(r => r.trim())
     : process.env.EXCLUDED_ROLES
       ? process.env.EXCLUDED_ROLES.split(',').map(r => r.trim())
       : [],
-  
+
   // Timeout configuration
   timeoutDuration: argv['timeout-duration'] !== undefined
     ? argv['timeout-duration']
     : process.env.TIMEOUT_DURATION !== undefined
       ? parseInt(process.env.TIMEOUT_DURATION, 10)
       : 5, // Default to 5 minutes if not specified
-  
+
   // OpenAI configuration
   openaiApiKey: argv['openai-api-key'] || process.env.OPENAI_API_KEY,
   openaiModel: argv['openai-model'] || process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
-  
+
   // Notification channel for moderation actions
   notificationChannelId: argv['notification-channel'] || process.env.NOTIFICATION_CHANNEL_ID,
-  
+
   // Message filtering
   ignoredPhrases: argv['ignored-phrases']
     ? argv['ignored-phrases'].split(',').map(p => p.trim().toLowerCase())
     : process.env.IGNORED_PHRASES
       ? process.env.IGNORED_PHRASES.split(',').map(p => p.trim().toLowerCase())
       : ['gm'], // Default to ignoring "gm" if not specified
-  
+
   // Context for AI analysis
   contextMessageCount: argv['context-messages'] || parseInt(process.env.CONTEXT_MESSAGE_COUNT || '5', 10),
-  
+
   // Logging configuration
   logLevel: argv['log-level'] || process.env.LOG_LEVEL || 'info',
 
@@ -155,16 +174,16 @@ const config = {
 };
 
 // Validation
-if (!config.token) {
+if (!rawConfig.token) {
   throw new Error('Discord token is required. Set via DISCORD_TOKEN env variable or --token flag.');
 }
 
-if (!config.serverId) {
+if (!rawConfig.serverId) {
   throw new Error('Discord server ID is required. Set via DISCORD_SERVER_ID env variable or --server flag.');
 }
 
-if (!config.openaiApiKey) {
+if (!rawConfig.openaiApiKey) {
   throw new Error('OpenAI API key is required. Set via OPENAI_API_KEY env variable or --openai-api-key flag.');
 }
 
-module.exports = { config };
+export const config: Config = rawConfig as Config;

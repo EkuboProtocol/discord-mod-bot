@@ -9,8 +9,8 @@ workers:
     environment_slug: node-js
     instance_count: 1
     instance_size_slug: basic-xxs
-    build_command: npm install
-    run_command: npm start
+    build_command: npm install -g bun && bun install
+    run_command: bun run src/index.ts
     envs:
       - key: DISCORD_TOKEN
         type: SECRET
