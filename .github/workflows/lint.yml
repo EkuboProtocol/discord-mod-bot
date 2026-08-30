@@ -9,7 +9,7 @@ on:
 
 jobs:
   lint:
-    name: Types and cyclomatic complexity
+    name: Types, complexity and tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,3 +23,5 @@ jobs:
       - run: bun run typecheck
 
       - run: bun run lint
+
+      - run: bun test

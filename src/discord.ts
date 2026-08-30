@@ -38,7 +38,7 @@ function channelName(message: Message): string {
 /**
  * Return a list of user-friendly role names for a guild member
  */
-function getRoleNames(member: GuildMember | null | undefined): string[] {
+export function getRoleNames(member: GuildMember | null | undefined): string[] {
   if (!member || !member.roles) {
     return [];
   }
@@ -51,7 +51,7 @@ function getRoleNames(member: GuildMember | null | undefined): string[] {
 /**
  * Returns true when Discord reports the target message no longer exists.
  */
-function isUnknownMessageError(error: unknown): boolean {
+export function isUnknownMessageError(error: unknown): boolean {
   return Boolean(
     error && typeof error === 'object' && (error as { code?: unknown }).code === 10008
   );
@@ -60,7 +60,7 @@ function isUnknownMessageError(error: unknown): boolean {
 /**
  * Delete a Discord message, ignoring the "already deleted" race.
  */
-async function deleteMessageIfPresent(message: Message, context: string): Promise<boolean> {
+export async function deleteMessageIfPresent(message: Message, context: string): Promise<boolean> {
   try {
     await message.delete();
     return true;

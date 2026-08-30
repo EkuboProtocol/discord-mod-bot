@@ -7,6 +7,8 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "bun run src/index.ts",
+    "test": "bun test",
+    "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions"

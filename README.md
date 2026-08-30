@@ -134,6 +134,13 @@ The repository includes a ready-to-use App Platform spec at `.do/app.yaml` that 
    ```bash
    doctl apps create --spec .do/app.yaml
    ```
+> **The live spec is the source of truth, not this file.** `deploy_on_push` only
+> rebuilds the source; it does not re-read `.do/app.yaml`. Changing the build or
+> run command here has no effect until you run `doctl apps update` (below), so
+> the two can silently drift apart. To edit the live spec safely, start from
+> `doctl apps spec get <APP_ID>` — it round-trips the encrypted secret values,
+> whereas applying this file as-is would clear them.
+
 4. After the app is created, add the required environment variables (Discord token, server ID, OpenAI key, etc.) under **Settings → Environment Variables** or by updating the spec and running:
    ```bash
    doctl apps update <APP_ID> --spec .do/app.yaml

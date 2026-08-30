@@ -34,12 +34,12 @@ function formatRolesForDisplay(roles: string[] | undefined | null): string {
   return roles.join(', ');
 }
 
-function isModernReasoningModel(model: string): boolean {
+export function isModernReasoningModel(model: string): boolean {
   const normalizedModel = model.toLowerCase();
   return normalizedModel.startsWith('gpt-5') || /^o\d/.test(normalizedModel);
 }
 
-function getTokenLimitParam(
+export function getTokenLimitParam(
   model: string,
   tokenLimit: number
 ): { max_completion_tokens: number } | { max_tokens: number } {

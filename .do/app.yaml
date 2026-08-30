@@ -9,7 +9,9 @@ workers:
     environment_slug: node-js
     instance_count: 1
     instance_size_slug: basic-xxs
-    build_command: npm install -g bun && bun install
+    # No build_command: the Bun buildpack is auto-selected by bun.lock and runs
+    # `bun install` itself. A custom command here runs in that buildpack, which
+    # has no npm on PATH.
     run_command: bun run src/index.ts
     envs:
       - key: DISCORD_TOKEN
