@@ -1,12 +1,2 @@
 {
-  "src/ai.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/discord.ts": {
-    "complexity": {
-      "count": 2
-    }
-  }
 }

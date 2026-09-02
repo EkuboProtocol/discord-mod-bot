@@ -1,31 +1,96 @@
+import { Duration, Effect, Schedule, Schema } from 'effect';
 import { ActivityType, type Client } from 'discord.js';
-import { logger } from './logger';
 import type { PresenceConfig } from './config';
+import { ApiError } from './errors';
 
-interface PriceInfo {
-  price: number;
-  changePct: number | null;
-}
-
-interface PriceEntry {
-  usdPrice: number;
-  decimals: number;
-}
-
-// Ekubo mainnet (chain 1) EKUBO token. The presence line is protocol-wide, so
-// the only per-token lookup is the price of EKUBO itself.
+/**
+ * Ekubo mainnet (chain 1) EKUBO token. The presence line is protocol-wide, so
+ * the only per-token lookup is the price of EKUBO itself.
+ */
 const CHAIN_ID = 1;
 const EKUBO_ADDRESS = '0x04c46e830bb56ce22735d5d8fc9cb90309317d0f';
 
+export interface PriceInfo {
+  readonly price: number;
+  readonly changePct: number | null;
+}
+
+interface PriceEntry {
+  readonly usdPrice: number;
+  readonly decimals: number;
+}
+
 /**
- * Fetch and parse JSON, failing fast rather than hanging the presence tick.
+ * The API's own encoding, taken at face value only after decoding.
+ *
+ * `chain_id` is a union because the feeds disagree about whether chain IDs are
+ * numbers or strings; both are normalised to a `BigInt` in the key below, so
+ * the union stops here rather than leaking into the aggregation.
  */
-async function fetchJson(url: string, timeoutMs: number): Promise<any> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-  if (!response.ok) {
-    throw new Error(`GET ${url} -> ${response.status}`);
-  }
-  return response.json();
+const ChainId = Schema.Union([Schema.Number, Schema.String]);
+
+const TokenRow = Schema.Struct({
+  chain_id: ChainId,
+  address: Schema.String,
+  usd_price: Schema.optional(Schema.NullOr(Schema.Number)),
+  decimals: Schema.Number
+});
+export type TokenRow = typeof TokenRow.Type;
+
+const VolumeRow = Schema.Struct({
+  date: Schema.String,
+  chain_id: ChainId,
+  token: Schema.String,
+  volume: Schema.Union([Schema.String, Schema.Number])
+});
+export type VolumeRow = typeof VolumeRow.Type;
+
+const TokenResponse = Schema.Struct({ usd_price: Schema.NullOr(Schema.Number) });
+
+const PriceHistoryResponse = Schema.Struct({
+  data: Schema.Array(Schema.Struct({ price: Schema.Number })).pipe(
+    Schema.withDecodingDefault(Effect.succeed([]))
+  )
+});
+
+const TokensResponse = Schema.Array(TokenRow);
+
+const VolumeOverviewResponse = Schema.Struct({
+  volumeByTokenByDate: Schema.Array(VolumeRow).pipe(Schema.withDecodingDefault(Effect.succeed([])))
+});
+
+/**
+ * Fetch and decode JSON, failing fast rather than hanging the presence tick.
+ *
+ * Decoding rather than casting is the point: a field the API renames turns into
+ * a logged `ApiError` and the previous status stays up, instead of `undefined`
+ * quietly propagating into the status line as `$NaN`.
+ */
+function fetchJson<A, I>(
+  url: string,
+  schema: Schema.Codec<A, I>,
+  timeoutMs: number
+): Effect.Effect<A, ApiError> {
+  return Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: signal => fetch(url, { signal }),
+      catch: cause => new ApiError({ url, cause })
+    });
+
+    if (!response.ok) {
+      return yield* new ApiError({ url, cause: new Error(`status ${response.status}`) });
+    }
+
+    const body = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: cause => new ApiError({ url, cause })
+    });
+
+    return yield* Schema.decodeUnknownEffect(schema)(body);
+  }).pipe(
+    Effect.timeout(Duration.millis(timeoutMs)),
+    Effect.catchCause(cause => new ApiError({ url, cause }))
+  );
 }
 
 /**
@@ -35,25 +100,34 @@ async function fetchJson(url: string, timeoutMs: number): Promise<any> {
  * bucket of the 24h history, so the percentage is genuinely "vs 24h ago" rather
  * than "vs the start of whichever bucket we happened to land in".
  */
-async function fetchPrice(apiBase: string, timeoutMs: number): Promise<PriceInfo> {
+function fetchPrice(
+  apiBase: string,
+  timeoutMs: number
+): Effect.Effect<PriceInfo | null, ApiError> {
   const tokenUrl = `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}`;
   const historyUrl =
     `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}/price-history` +
     '?interval=900&duration=86400';
 
-  const [token, history] = await Promise.all([
-    fetchJson(tokenUrl, timeoutMs),
-    fetchJson(historyUrl, timeoutMs)
-  ]);
+  return Effect.gen(function* () {
+    const [token, history] = yield* Effect.all(
+      [
+        fetchJson(tokenUrl, TokenResponse, timeoutMs),
+        fetchJson(historyUrl, PriceHistoryResponse, timeoutMs)
+      ],
+      { concurrency: 'unbounded' }
+    );
 
-  const price = token.usd_price;
-  const buckets = Array.isArray(history.data) ? history.data : [];
-  const baseline = buckets.length > 0 ? buckets[0].price : null;
+    const price = token.usd_price;
+    if (price === null) {
+      return null;
+    }
 
-  const changePct =
-    baseline && price ? ((price - baseline) / baseline) * 100 : null;
+    const baseline = history.data.length > 0 ? history.data[0]!.price : null;
+    const changePct = baseline ? ((price - baseline) / baseline) * 100 : null;
 
-  return { price, changePct };
+    return { price, changePct };
+  });
 }
 
 /**
@@ -63,15 +137,17 @@ async function fetchPrice(apiBase: string, timeoutMs: number): Promise<PriceInfo
  * native ETH as "0x0" while the token list spells out the zero address; a plain
  * string compare would silently drop the single largest row.
  */
-export function buildPriceMap(tokens: Array<Record<string, any>>): Map<string, PriceEntry> {
+export function buildPriceMap(tokens: ReadonlyArray<TokenRow>): Map<string, PriceEntry> {
   const map = new Map<string, PriceEntry>();
 
   for (const token of tokens) {
     if (token.usd_price === null || token.usd_price === undefined) {
       continue;
     }
-    const key = `${BigInt(token.chain_id)}:${BigInt(token.address)}`;
-    map.set(key, { usdPrice: token.usd_price, decimals: token.decimals });
+    map.set(`${BigInt(token.chain_id)}:${BigInt(token.address)}`, {
+      usdPrice: token.usd_price,
+      decimals: token.decimals
+    });
   }
 
   return map;
@@ -82,8 +158,8 @@ export function buildPriceMap(tokens: Array<Record<string, any>>): Map<string, P
  * `day` is `YYYY-MM-DD`.
  */
 export function sumDayVolumeUsd(
-  rows: Array<Record<string, any>>,
-  priceMap: Map<string, PriceEntry>,
+  rows: ReadonlyArray<VolumeRow>,
+  priceMap: ReadonlyMap<string, PriceEntry>,
   day: string
 ): number {
   let total = 0;
@@ -108,11 +184,13 @@ export function sumDayVolumeUsd(
  * The feed always carries a bucket for the current day, which is partial and
  * would read as a sudden collapse in volume if we published it.
  */
-export function latestCompleteDay(rows: Array<Record<string, any>>): string | null {
+export function latestCompleteDay(
+  rows: ReadonlyArray<{ readonly date: string }>
+): string | null {
   const today = new Date().toISOString().slice(0, 10);
   const days = rows.map(row => row.date.slice(0, 10)).filter(day => day < today);
 
-  return days.length > 0 ? days.sort().at(-1) : null;
+  return days.length > 0 ? (days.sort().at(-1) ?? null) : null;
 }
 
 /**
@@ -120,40 +198,35 @@ export function latestCompleteDay(rows: Array<Record<string, any>>): string | nu
  * every chain. Verified against DefiLlama's reported 24h figure to within ~1.5%,
  * which is what rules out the usual both-sides-of-the-swap double count.
  */
-async function fetchVolumeUsd(apiBase: string, timeoutMs: number): Promise<number | null> {
-  const [overview, tokens] = await Promise.all([
-    fetchJson(`${apiBase}/overview/volume`, timeoutMs),
-    fetchJson(`${apiBase}/tokens`, timeoutMs)
-  ]);
+function fetchVolumeUsd(
+  apiBase: string,
+  timeoutMs: number
+): Effect.Effect<number | null, ApiError> {
+  return Effect.gen(function* () {
+    const [overview, tokens] = yield* Effect.all(
+      [
+        fetchJson(`${apiBase}/overview/volume`, VolumeOverviewResponse, timeoutMs),
+        fetchJson(`${apiBase}/tokens`, TokensResponse, timeoutMs)
+      ],
+      { concurrency: 'unbounded' }
+    );
 
-  const rows = overview.volumeByTokenByDate || [];
-  const day = latestCompleteDay(rows);
-  if (!day) {
-    return null;
-  }
+    const rows = overview.volumeByTokenByDate;
+    const day = latestCompleteDay(rows);
 
-  return sumDayVolumeUsd(rows, buildPriceMap(tokens), day);
+    return day === null ? null : sumDayVolumeUsd(rows, buildPriceMap(tokens), day);
+  });
 }
 
-/**
- * Compact USD, e.g. `$25.7M`.
- */
+/** Compact USD, e.g. `$25.7M`. */
 export function formatUsdCompact(value: number): string {
-  if (value >= 1e9) {
-    return `$${(value / 1e9).toFixed(1)}B`;
-  }
-  if (value >= 1e6) {
-    return `$${(value / 1e6).toFixed(1)}M`;
-  }
-  if (value >= 1e3) {
-    return `$${(value / 1e3).toFixed(1)}K`;
-  }
+  if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
+  if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `$${(value / 1e3).toFixed(1)}K`;
   return `$${value.toFixed(0)}`;
 }
 
-/**
- * Signed movement, e.g. `▲2.5%`.
- */
+/** Signed movement, e.g. `▲2.5%`. */
 export function formatChange(changePct: number | null): string {
   if (changePct === null || !Number.isFinite(changePct)) {
     return '';
@@ -163,9 +236,7 @@ export function formatChange(changePct: number | null): string {
   return ` ${arrow}${Math.abs(changePct).toFixed(1)}%`;
 }
 
-/**
- * Compose the status line, e.g. `EKUBO $0.4807 ▲2.5% · 24h vol $25.7M`.
- */
+/** Compose the status line, e.g. `EKUBO $0.4807 ▲2.5% · 24h vol $25.7M`. */
 export function formatStatus(priceInfo: PriceInfo | null, volumeUsd: number | null): string {
   const parts: string[] = [];
 
@@ -185,66 +256,54 @@ export function formatStatus(priceInfo: PriceInfo | null, volumeUsd: number | nu
  * Bots cannot use Rich Presence (that is a local-IPC feature of the desktop
  * client); the gateway equivalent is a custom activity, which is what this sets.
  */
-export async function updatePresence(client: Client, presenceConfig: PresenceConfig): Promise<void> {
+export function updatePresence(
+  client: Client,
+  presenceConfig: PresenceConfig
+): Effect.Effect<void, ApiError> {
   const { apiBase, timeoutMs } = presenceConfig;
 
-  const [priceInfo, volumeUsd] = await Promise.all([
-    fetchPrice(apiBase, timeoutMs),
-    fetchVolumeUsd(apiBase, timeoutMs)
-  ]);
+  return Effect.gen(function* () {
+    const [priceInfo, volumeUsd] = yield* Effect.all(
+      [fetchPrice(apiBase, timeoutMs), fetchVolumeUsd(apiBase, timeoutMs)],
+      { concurrency: 'unbounded' }
+    );
 
-  const status = formatStatus(priceInfo, volumeUsd);
-  if (!status) {
-    logger.warn('Presence: no data available, leaving previous status in place');
-    return;
-  }
+    const status = formatStatus(priceInfo, volumeUsd);
+    if (!status) {
+      yield* Effect.logWarning('Presence: no data available, leaving previous status in place');
+      return;
+    }
 
-  client.user?.setPresence({
-    activities: [{ type: ActivityType.Custom, name: 'ekubo-stats', state: status }],
-    status: 'online'
+    client.user?.setPresence({
+      activities: [{ type: ActivityType.Custom, name: 'ekubo-stats', state: status }],
+      status: 'online'
+    });
+    yield* Effect.logInfo(`Presence updated: ${status}`);
   });
-  logger.info(`Presence updated: ${status}`);
-}
-
-/**
- * Run one presence tick, absorbing any failure.
- *
- * Moderation is the bot's actual job, so a flaky stats endpoint must never take
- * the process down or clear a status that was previously fine.
- */
-async function safeUpdatePresence(client: Client, presenceConfig: PresenceConfig): Promise<void> {
-  try {
-    await updatePresence(client, presenceConfig);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`Presence update failed, keeping previous status: ${message}`);
-  }
 }
 
 /**
  * Publish the summary now and on an interval for as long as the bot runs.
  *
- * The enabled check lives here rather than at the call site so that wiring this
- * into the ready handler adds no branch to it, keeping the complexity ratchet in
- * AGENTS.md happy.
+ * Moderation is the bot's actual job, so every failure is absorbed here: a
+ * flaky stats endpoint must never take the process down or clear a status that
+ * was previously fine. The loop is a fiber rather than a `setInterval`, so it
+ * is interrupted with the rest of the app on shutdown instead of needing an
+ * `unref` to avoid pinning the process open.
  */
-export function startPresence(
+export function presenceLoop(
   client: Client,
-  presenceConfig: PresenceConfig | undefined
-): ReturnType<typeof setInterval> | null {
-  if (!presenceConfig || !presenceConfig.enabled) {
-    logger.info('Presence updates disabled');
-    return null;
+  presenceConfig: PresenceConfig
+): Effect.Effect<void> {
+  if (!presenceConfig.enabled) {
+    return Effect.logInfo('Presence updates disabled');
   }
 
-  safeUpdatePresence(client, presenceConfig);
-
-  const timer = setInterval(
-    () => safeUpdatePresence(client, presenceConfig),
-    presenceConfig.intervalMs
+  return updatePresence(client, presenceConfig).pipe(
+    Effect.catch(error =>
+      Effect.logWarning(`Presence update failed, keeping previous status: ${error.message}`)
+    ),
+    Effect.repeat(Schedule.spaced(Duration.millis(presenceConfig.intervalMs))),
+    Effect.asVoid
   );
-  timer.unref?.();
-
-  return timer;
 }
-

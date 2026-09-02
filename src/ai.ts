@@ -1,44 +1,39 @@
+import { Context, Duration, Effect, Layer, Redacted, Schema } from 'effect';
 import OpenAI from 'openai';
-import { logger } from './logger';
-import { config } from './config';
-
-export type Severity = 'high' | 'medium' | 'low';
+import { AppConfig } from './config';
+import { OpenAiError } from './errors';
+import { CLEAN, ModerationVerdict } from './moderation';
 
 export interface ContextMessage {
-  author: string;
-  roles: string[];
-  content: string;
-  timestamp?: Date;
+  readonly author: string;
+  readonly roles: ReadonlyArray<string>;
+  readonly content: string;
 }
 
 export interface MessageMeta {
-  author?: string;
-  roles: string[];
+  readonly author?: string;
+  readonly roles: ReadonlyArray<string>;
 }
 
-export interface ModerationResult {
-  isSpamOrScam: boolean;
-  severity: Severity | null;
-  reason: string | null;
+/** Roles as the prompt shows them; a member with none is stated, not omitted. */
+export function formatRolesForDisplay(roles: ReadonlyArray<string> | undefined | null): string {
+  return roles && roles.length > 0 ? roles.join(', ') : 'None';
 }
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: config.openaiApiKey
-});
-
-function formatRolesForDisplay(roles: string[] | undefined | null): string {
-  if (!roles || roles.length === 0) {
-    return 'None';
-  }
-  return roles.join(', ');
-}
-
+/**
+ * Whether the model belongs to the families that take `max_completion_tokens`
+ * and a `developer` system role.
+ */
 export function isModernReasoningModel(model: string): boolean {
   const normalizedModel = model.toLowerCase();
   return normalizedModel.startsWith('gpt-5') || /^o\d/.test(normalizedModel);
 }
 
+/**
+ * Getting this wrong is not a soft failure: OpenAI rejects `max_tokens` for the
+ * reasoning models and `max_completion_tokens` for the older ones, so the whole
+ * moderation call errors out and the bot falls back to "not spam".
+ */
 export function getTokenLimitParam(
   model: string,
   tokenLimit: number
@@ -48,42 +43,7 @@ export function getTokenLimitParam(
     : { max_tokens: tokenLimit };
 }
 
-/**
- * Check if a message contains spam or scam content, considering channel context
- */
-export async function checkMessage(
-  messageContent: string,
-  previousMessages: ContextMessage[] = [],
-  currentMessageMeta: MessageMeta | null = null
-): Promise<ModerationResult> {
-  try {
-    // Log full message being analyzed
-    logger.debug('=========== BEGIN MESSAGE ANALYSIS ===========');
-    logger.debug('Message being analyzed:');
-    logger.debug(messageContent);
-    logger.debug('=============================================');
-
-    // Format previous messages for context
-    const formattedPreviousMessages = previousMessages.map(msg => {
-      const rolesText = formatRolesForDisplay(msg.roles);
-      return `[${msg.author} | Roles: ${rolesText}]: ${msg.content}`;
-    }).join('\n');
-
-    // Log previous messages if available
-    if (previousMessages.length > 0) {
-      logger.debug('Previous messages for context:');
-      logger.debug(formattedPreviousMessages);
-      logger.debug('=============================================');
-    } else {
-      logger.debug('No previous messages for context');
-      logger.debug('=============================================');
-    }
-
-    const contextText = previousMessages.length > 0
-      ? `\nHere are the previous ${previousMessages.length} messages in this channel for context:\n${formattedPreviousMessages}\n\nNow analyze this new message:`
-      : '';
-
-    const systemPrompt = `
+export const SYSTEM_PROMPT = `
     You are a Discord moderation assistant that identifies spam and scam messages.
 
     Analyze the message and determine if it matches any of these spam/scam patterns, and classify them by severity:
@@ -124,102 +84,112 @@ export async function checkMessage(
     and legitimate support requests should not be flagged.
     `;
 
-    // Log system prompt
-    logger.debug('System prompt:');
-    logger.debug(systemPrompt);
-    logger.debug('=============================================');
+export interface CheckInput {
+  readonly content: string;
+  readonly previousMessages: ReadonlyArray<ContextMessage>;
+  readonly meta: MessageMeta | null;
+}
 
-    // Construct messages array for the API call
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      {
-        role: isModernReasoningModel(config.openaiModel) ? "developer" : "system",
-        content: systemPrompt
-      }
-    ];
-
-    // Add context as a separate message if available
-    if (contextText) {
-      messages.push({
-        role: "user",
-        content: contextText
-      });
+/**
+ * The exact request body sent to OpenAI, built without touching the network.
+ *
+ * Pulling this out of the request is what lets a test assert that context
+ * ordering, the role name and the token-limit parameter are right, none of
+ * which used to be observable without an API key.
+ */
+export function buildRequest(
+  model: string,
+  input: CheckInput
+): OpenAI.Chat.ChatCompletionCreateParamsNonStreaming {
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    {
+      role: isModernReasoningModel(model) ? 'developer' : 'system',
+      content: SYSTEM_PROMPT
     }
+  ];
 
-    let currentMessageContent = messageContent;
-    if (currentMessageMeta) {
-      const rolesText = formatRolesForDisplay(currentMessageMeta.roles);
-      const authorLine = currentMessageMeta.author
-        ? `Author: ${currentMessageMeta.author}\n`
-        : '';
-      currentMessageContent = `${authorLine}Roles: ${rolesText}\nMessage: ${messageContent}`;
-    }
+  if (input.previousMessages.length > 0) {
+    const formatted = input.previousMessages
+      .map(msg => `[${msg.author} | Roles: ${formatRolesForDisplay(msg.roles)}]: ${msg.content}`)
+      .join('\n');
 
-    // Add the current message to analyze
     messages.push({
-      role: "user",
-      content: currentMessageContent
+      role: 'user',
+      content:
+        `\nHere are the previous ${input.previousMessages.length} messages in this ` +
+        `channel for context:\n${formatted}\n\nNow analyze this new message:`
     });
-
-    // Log full messages array being sent to OpenAI
-    logger.debug('Complete messages array being sent to OpenAI:');
-    logger.debug(JSON.stringify(messages, null, 2));
-    logger.debug('=============================================');
-
-    // Log request parameters
-    logger.debug('OpenAI request parameters:');
-    logger.debug(`Model: ${config.openaiModel}`);
-    logger.debug(`Temperature: 0.1`);
-    const tokenLimitParam = getTokenLimitParam(config.openaiModel, 200);
-    const tokenLimitParamName = Object.keys(tokenLimitParam)[0];
-    logger.debug(`${tokenLimitParamName}: 200`); // Increased token limit for more detailed response
-    logger.debug(`Response format: JSON object`);
-    logger.debug('=============================================');
-
-    // Send request to OpenAI
-    logger.debug('Sending request to OpenAI...');
-    const response = await openai.chat.completions.create({
-      model: config.openaiModel,
-      messages: messages,
-      temperature: 0.1,
-      ...tokenLimitParam,
-      response_format: { type: "json_object" }
-    });
-
-    // Log full OpenAI response
-    logger.debug('Full OpenAI API response:');
-    logger.debug(JSON.stringify(response, null, 2));
-    logger.debug('=============================================');
-
-    // Extract the content from the response
-    const aiResponse = response.choices[0]?.message?.content ?? '{}';
-
-    // Log the extracted content
-    logger.debug('Extracted AI response content:');
-    logger.debug(aiResponse);
-    logger.debug('=============================================');
-
-    // Parse the JSON response
-    const result = JSON.parse(aiResponse) as Partial<ModerationResult>;
-
-    // Log the parsed result
-    logger.debug('Parsed AI analysis result:');
-    logger.debug(JSON.stringify(result, null, 2));
-    logger.debug('============ END MESSAGE ANALYSIS ===========');
-
-    return {
-      isSpamOrScam: Boolean(result.isSpamOrScam),
-      severity: result.severity || null,
-      reason: result.reason || "Detected as spam/scam by moderation system"
-    };
-  } catch (error) {
-    logger.error('Error checking message with AI:', error);
-    logger.debug('============ MESSAGE ANALYSIS FAILED ===========');
-
-    // Return a safe default to ensure bot continues functioning
-    return {
-      isSpamOrScam: false,
-      severity: null,
-      reason: null
-    };
   }
+
+  const meta = input.meta;
+  messages.push({
+    role: 'user',
+    content: meta
+      ? `${meta.author ? `Author: ${meta.author}\n` : ''}` +
+        `Roles: ${formatRolesForDisplay(meta.roles)}\nMessage: ${input.content}`
+      : input.content
+  });
+
+  return {
+    model,
+    messages,
+    temperature: 0.1,
+    ...getTokenLimitParam(model, 200),
+    response_format: { type: 'json_object' }
+  };
+}
+
+const decodeVerdict = Schema.decodeUnknownEffect(ModerationVerdict);
+
+/**
+ * The moderation model, as a service.
+ *
+ * `check` cannot fail. That is a deliberate promise encoded in its type: an
+ * OpenAI outage, a malformed completion, or a timeout must all read as "not
+ * spam", because the alternative — an error path that reaches the action code —
+ * would have the bot banning people because a third party was down.
+ */
+export class Moderator extends Context.Service<
+  Moderator,
+  {
+    check(input: CheckInput): Effect.Effect<ModerationVerdict>;
+  }
+>()('discord-mod-bot/Moderator') {
+  static readonly layer = Layer.effect(
+    Moderator,
+    Effect.gen(function* () {
+      const config = yield* AppConfig;
+      const client = new OpenAI({ apiKey: Redacted.value(config.openaiApiKey) });
+      const model = config.openaiModel;
+
+      const check = Effect.fn('Moderator.check')(
+        function* (input: CheckInput) {
+          const response = yield* Effect.tryPromise({
+            try: signal =>
+              client.chat.completions.create(buildRequest(model, input), { signal }),
+            catch: cause => new OpenAiError({ cause })
+          }).pipe(
+            // The original had no bound here, so a stalled request pinned the
+            // message handler open indefinitely.
+            Effect.timeout(Duration.seconds(30))
+          );
+
+          const raw = response.choices[0]?.message?.content ?? '{}';
+          yield* Effect.logDebug('OpenAI verdict', raw);
+
+          const parsed = yield* Effect.try({
+            try: () => JSON.parse(raw) as unknown,
+            catch: cause => new OpenAiError({ cause })
+          });
+
+          return yield* decodeVerdict(parsed);
+        },
+        // `catchCause`, not `catch`: a decode defect must fail open too.
+        Effect.tapCause(cause => Effect.logError('Error checking message with AI', cause)),
+        Effect.catchCause(() => Effect.succeed(CLEAN))
+      );
+
+      return Moderator.of({ check });
+    })
+  ).pipe(Layer.provide(AppConfig.layer));
 }

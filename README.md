@@ -1,6 +1,6 @@
 # Discord Moderation Bot
 
-A Bun + TypeScript bot for Discord that uses AI to automatically moderate messages and remove spam or scam content from your server.
+A Bun + TypeScript bot for Discord that uses AI to automatically moderate messages and remove spam or scam content from your server. It is built with [Effect](https://effect.website) 4 (release candidate, pinned exactly): configuration, the moderation model and logging are services, model responses are schema-decoded rather than cast, and the moderation decision logic is a pure module (`src/moderation.ts`) covered by tests.
 
 ## Features
 
@@ -85,7 +85,8 @@ Options:
                              moderation                             [string]
   -m, --openai-model         OpenAI model to use                    [string]
   -n, --notification-channel Channel ID to send notifications to    [string]
-  --context-messages         Number of previous messages for context [number]
+  --context-messages         Number of previous messages for context
+                                                     [string] [default: "5"]
   -l, --log-level            Log level (error, warn, info, debug)
                                                     [string] [default: "info"]
   -k, --openai-api-key       OpenAI API key                        [string]
@@ -163,7 +164,11 @@ Remember to keep secret values (Discord/OpenAI tokens) stored as **Secret** scop
 
 ## Configuration
 
-The bot can be configured using environment variables or command line arguments. Command line arguments take precedence over environment variables.
+The bot can be configured using environment variables or command line arguments. A command line argument takes precedence over the matching environment variable, which in turn takes precedence over the built-in default. Every setting has exactly one environment variable name and, where useful, one flag that sets the same thing; `--help` lists both.
+
+> Note: `LOG_LEVEL` and `CONTEXT_MESSAGE_COUNT` previously had no effect, because the corresponding flags always carried a default value and so always won. They are honoured now.
+
+If a required setting is missing, the bot names it at startup along with both ways to supply it, rather than reporting a bare stack trace.
 
 ### Environment Variables
 
