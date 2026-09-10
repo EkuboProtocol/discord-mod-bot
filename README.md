@@ -67,6 +67,16 @@ bun run typecheck
 bun run lint
 ```
 
+### Startup validation
+
+Before connecting to Discord, the bot sends one synthetic moderation request to
+OpenAI using the configured API key, model, and normal request parameters. Startup
+requires a complete response that decodes as a moderation verdict within 30 seconds.
+An API error, timeout, refusal, truncated output, or invalid verdict fails startup
+with exit code 1 and an error naming the configured model. This check never posts a
+Discord message or takes a moderation action. It incurs one normal API request per
+startup. Errors processing real messages still fail open.
+
 ### Command Line Arguments
 
 The bot supports the following command line arguments:

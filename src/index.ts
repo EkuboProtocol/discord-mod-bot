@@ -59,6 +59,11 @@ const program = Effect.gen(function* () {
       })
   );
 
+  const moderator = yield* Moderator;
+  yield* Effect.logInfo(`Checking OpenAI configuration for model ${config.openaiModel}`);
+  yield* moderator.startupCheck;
+  yield* Effect.logInfo(`OpenAI startup check passed for model ${config.openaiModel}`);
+
   const client = yield* gatewayClient;
   yield* setupBot(client, runtime);
 

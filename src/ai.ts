@@ -153,6 +153,7 @@ export class Moderator extends Context.Service<
   Moderator,
   {
     check(input: CheckInput): Effect.Effect<ModerationVerdict>;
+    readonly startupCheck: Effect.Effect<void, OpenAiError>;
   }
 >()('discord-mod-bot/Moderator') {
   static readonly layer = Layer.effect(
@@ -162,34 +163,58 @@ export class Moderator extends Context.Service<
       const client = new OpenAI({ apiKey: Redacted.value(config.openaiApiKey) });
       const model = config.openaiModel;
 
-      const check = Effect.fn('Moderator.check')(
-        function* (input: CheckInput) {
-          const response = yield* Effect.tryPromise({
-            try: signal =>
-              client.chat.completions.create(buildRequest(model, input), { signal }),
-            catch: cause => new OpenAiError({ cause })
-          }).pipe(
-            // The original had no bound here, so a stalled request pinned the
-            // message handler open indefinitely.
-            Effect.timeout(Duration.seconds(30))
-          );
-
-          const raw = response.choices[0]?.message?.content ?? '{}';
-          yield* Effect.logDebug('OpenAI verdict', raw);
-
-          const parsed = yield* Effect.try({
-            try: () => JSON.parse(raw) as unknown,
-            catch: cause => new OpenAiError({ cause })
-          });
-
-          return yield* decodeVerdict(parsed);
-        },
-        // `catchCause`, not `catch`: a decode defect must fail open too.
-        Effect.tapCause(cause => Effect.logError('Error checking message with AI', cause)),
-        Effect.catchCause(() => Effect.succeed(CLEAN))
-      );
-
-      return Moderator.of({ check });
+      return createModerator(client, model);
     })
   ).pipe(Layer.provide(AppConfig.layer));
+}
+
+/** Shared request/decode path, with distinct startup and live-message failure policies. */
+export function createModerator(client: OpenAI, model: string): Moderator['Service'] {
+  const requestVerdict = Effect.fn('Moderator.requestVerdict')(
+    function* (input: CheckInput) {
+      const response = yield* Effect.tryPromise({
+        try: signal =>
+          client.chat.completions.create(buildRequest(model, input), { signal }),
+        catch: cause => new OpenAiError({ cause })
+      }).pipe(
+        // The original had no bound here, so a stalled request pinned the
+        // message handler open indefinitely.
+        Effect.timeout(Duration.seconds(30))
+      );
+
+      const choice = response.choices[0];
+      if (!choice || choice.finish_reason !== 'stop' || !choice.message.content) {
+        return yield* new OpenAiError({
+          cause: new Error(`No complete moderation verdict (finish_reason: ${choice?.finish_reason ?? 'missing'})`)
+        });
+      }
+      const raw = choice.message.content;
+      yield* Effect.logDebug('OpenAI verdict', raw);
+
+      const parsed = yield* Effect.try({
+        try: () => JSON.parse(raw) as unknown,
+        catch: cause => new OpenAiError({ cause })
+      });
+
+      return yield* decodeVerdict(parsed);
+    },
+  );
+
+  const check = Effect.fn('Moderator.check')(
+    (input: CheckInput) => requestVerdict(input),
+    Effect.tapCause(cause => Effect.logError('Error checking message with AI', cause)),
+    Effect.catchCause(() => Effect.succeed(CLEAN))
+  );
+
+  const startupCheck = requestVerdict({
+    content: 'Hello everyone! Where can I find the documentation?',
+    previousMessages: [],
+    meta: { author: 'Startup check', roles: [] }
+  }).pipe(
+    Effect.asVoid,
+    Effect.mapError(cause => new OpenAiError({ cause })),
+    Effect.tapCause(cause => Effect.logError(`OpenAI startup check failed for model ${model}`, cause))
+  );
+
+  return Moderator.of({ check, startupCheck });
 }
