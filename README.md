@@ -77,6 +77,18 @@ with exit code 1 and an error naming the configured model. This check never post
 Discord message or takes a moderation action. It incurs one normal API request per
 startup. Errors processing real messages still fail open.
 
+After Discord emits `clientReady`, startup fetches the server's roles, channels,
+active threads, and the bot member to check effective permissions (including channel
+overwrites). It verifies bans, timeouts when enabled, moderation notices and context,
+report embeds, and the report button's purge access across regular text channels.
+Invalid configured channels or missing permissions fail startup with an actionable
+error before moderation handlers are enabled. This check is read-only.
+
+Role hierarchy limitations are logged for non-excluded roles at or above the bot.
+The server owner and administrators retain Discord's moderation protections; startup
+cannot guarantee actions against every member. Channel/role changes after startup
+and threads inaccessible to the bot still require operational attention.
+
 ### Command Line Arguments
 
 The bot supports the following command line arguments:

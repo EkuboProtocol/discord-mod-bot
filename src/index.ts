@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
-import { Effect, Exit, Layer, ManagedRuntime, Option, Redacted } from 'effect';
+import { Effect, Exit, Layer, ManagedRuntime, Option } from 'effect';
 import { Moderator } from './ai';
 import { AppConfig } from './config';
-import { setupBot } from './discord';
-import { DiscordError, explainStartupFailure } from './errors';
+import { describeSetup, setupBot } from './discord';
+import { explainStartupFailure } from './errors';
+import { loginDiscord, validateDiscordPermissions } from './discord-startup';
 import { LoggerLive } from './logging';
 
 /**
@@ -65,13 +66,11 @@ const program = Effect.gen(function* () {
   yield* Effect.logInfo(`OpenAI startup check passed for model ${config.openaiModel}`);
 
   const client = yield* gatewayClient;
+  yield* loginDiscord(client, config.token);
+  yield* validateDiscordPermissions(client, config);
+  yield* describeSetup(client, config);
   yield* setupBot(client, runtime);
-
-  yield* Effect.tryPromise({
-    try: () => client.login(Redacted.value(config.token)),
-    catch: cause => new DiscordError({ op: 'log in to Discord', cause })
-  });
-  yield* Effect.logInfo('Discord bot logged in successfully');
+  yield* Effect.logInfo('Discord bot startup checks passed; moderation is active');
 
   // The bot is event-driven from here; hold the scope open until interrupted.
   yield* Effect.never;

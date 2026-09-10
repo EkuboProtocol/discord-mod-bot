@@ -569,7 +569,7 @@ const handleInteraction = (client: Client, interaction: Interaction) =>
 // Startup
 // ---------------------------------------------------------------------------
 
-function describeSetup(client: Client, config: AppConfigShape) {
+export function describeSetup(client: Client, config: AppConfigShape) {
   return Effect.gen(function* () {
     yield* Effect.logInfo(`Logged in as ${client.user?.tag}`);
 
@@ -630,18 +630,7 @@ export const setupBot = (
       runtime.runFork(effect);
     };
 
-    client.once('ready', () =>
-      fork(
-        describeSetup(client, config).pipe(
-          Effect.catch(error =>
-            Effect.logError(error.message).pipe(
-              Effect.andThen(Effect.sync(() => process.exit(1)))
-            )
-          ),
-          Effect.andThen(presenceLoop(client, config.presence))
-        )
-      )
-    );
+    fork(presenceLoop(client, config.presence));
 
     client.on('messageCreate', message => fork(handleMessage(client, message)));
     client.on('interactionCreate', interaction => fork(handleInteraction(client, interaction)));
