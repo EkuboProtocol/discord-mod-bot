@@ -58,13 +58,8 @@ const VolumeOverviewResponse = Schema.Struct({
   volumeByTokenByDate: Schema.Array(Schema.Struct({ ...VolumeRow.fields, fees: Schema.Union([Schema.String, Schema.Number]) })).pipe(Schema.withDecodingDefault(Effect.succeed([])))
 });
 
-const TvlOverviewResponse = Schema.Struct({
-  tvlByToken: Schema.Array(Schema.Struct({
-    chain_id: ChainId,
-    token: Schema.String,
-    balance: Schema.Union([Schema.String, Schema.Number])
-  }))
-});
+// Use the protocol total rather than a partial sum of locally priced pool balances.
+const TVL_URL = 'https://api.llama.fi/tvl/ekubo';
 
 /**
  * Fetch and decode JSON, failing fast rather than hanging the presence tick.
@@ -216,7 +211,7 @@ export const fetchStatuses = Effect.fn('fetchStatuses')(function* (
     optionalStat(fetchPrice(apiBase, timeoutMs)),
     optionalStat(fetchPrice(apiBase, timeoutMs, STONX_CHAIN_ID, STONX_ADDRESS)),
     optionalStat(fetchJson(`${apiBase}/overview/volume`, VolumeOverviewResponse, timeoutMs)),
-    optionalStat(fetchJson(`${apiBase}/overview/tvl`, TvlOverviewResponse, timeoutMs)),
+    optionalStat(fetchJson(TVL_URL, Schema.Number, timeoutMs)),
     optionalStat(fetchJson(`${apiBase}/tokens`, TokensResponse, timeoutMs))
   ], { concurrency: 'unbounded' });
   const priceMap = buildPriceMap(tokens ?? []);
@@ -227,10 +222,7 @@ export const fetchStatuses = Effect.fn('fetchStatuses')(function* (
   const fees = canPriceDay ? sumDayVolumeUsd(
     rows.map(row => ({ ...row, volume: row.fees })), priceMap, day
   ) : null;
-  const tvlUsd = tvl && tokens ? sumDayVolumeUsd(
-    tvl.tvlByToken.map(row => ({ ...row, date: '', volume: row.balance })), priceMap, ''
-  ) : null;
-  return formatStatuses(price, volume, tvlUsd, fees, stonx);
+  return formatStatuses(price, volume, tvl, fees, stonx);
 });
 
 /** Compact USD, e.g. `$25.7M`. */

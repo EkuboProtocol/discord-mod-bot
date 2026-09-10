@@ -176,7 +176,7 @@ describe('formatStatuses', () => {
 });
 
 describe('fetchStatuses', () => {
-  test('prices fees and TVL with token decimals, and survives a failed STONX endpoint', async () => {
+  test('uses protocol TVL directly, prices fees, and survives a failed STONX endpoint', async () => {
     const { Effect } = await import('effect');
     const { fetchStatuses } = await import('../src/presence');
     const originalFetch = globalThis.fetch;
@@ -189,8 +189,8 @@ describe('fetchStatuses', () => {
         body = { volumeByTokenByDate: [
           { chain_id: '0x1', token: '0x1', date: day, volume: '10000000', fees: '100000' }
         ] };
-      } else if (url.endsWith('/overview/tvl')) {
-        body = { tvlByToken: [{ chain_id: 1, token: '0x1', balance: '50000000' }] };
+      } else if (url === 'https://api.llama.fi/tvl/ekubo') {
+        body = 28_262_202.66;
       } else if (url.endsWith('/tokens')) {
         body = [{ chain_id: 1, address: '0x01', decimals: 6, usd_price: 2 }];
       } else if (url.includes('price-history')) {
@@ -206,7 +206,7 @@ describe('fetchStatuses', () => {
         intervalMs: 300000, rotationMs: 5000
       }));
       expect(statuses).toEqual([
-        'EKUBO $2.0000 ▲100.0%', '24h vol $20', 'TVL $100', '24h fees $0'
+        'EKUBO $2.0000 ▲100.0%', '24h vol $20', 'TVL $28.3M', '24h fees $0'
       ]);
     } finally {
       globalThis.fetch = originalFetch;
