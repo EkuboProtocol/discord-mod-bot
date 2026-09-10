@@ -133,7 +133,7 @@ export function buildRequest(
   return {
     model,
     messages,
-    temperature: 0.1,
+    ...(isModernReasoningModel(model) ? {} : { temperature: 0.1 }),
     ...getTokenLimitParam(model, 200),
     response_format: { type: 'json_object' }
   };
