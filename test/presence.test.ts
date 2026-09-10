@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildPriceMap,
   formatChange,
-  formatStatus,
+  formatStatuses,
   formatUsdCompact,
   latestCompleteDay,
   sumDayVolumeUsd
@@ -159,32 +159,57 @@ describe('formatChange', () => {
   });
 });
 
-describe('formatStatus', () => {
-  test('joins both halves with a separator', () => {
-    expect(formatStatus({ price: 0.4807, changePct: 1.7 }, 25_700_000)).toBe(
-      'EKUBO $0.4807 ▲1.7% · 24h vol $25.7M'
-    );
+describe('formatStatuses', () => {
+  test('rotates one stat per line, including Robinhood Chain STONX', () => {
+    expect(formatStatuses({ price: 0.4807, changePct: 1.7 }, 25_700_000,
+      12_000_000, 45_000, { price: 1.0282, changePct: -2.5 })).toEqual([
+      'EKUBO $0.4807 ▲1.7%', '24h vol $25.7M', 'TVL $12.0M',
+      '24h fees $45.0K', 'STONX $1.0282 ▼2.5%'
+    ]);
   });
 
-  test('omits the movement when there is no baseline', () => {
-    expect(formatStatus({ price: 0.4807, changePct: null }, 25_700_000)).toBe(
-      'EKUBO $0.4807 · 24h vol $25.7M'
-    );
+  test('omits unavailable and non-finite stats but retains zero', () => {
+    expect(formatStatuses(null, 0, NaN, Infinity, { price: NaN, changePct: null }))
+      .toEqual(['24h vol $0']);
+    expect(formatStatuses(null, null, null, null, null)).toEqual([]);
   });
+});
 
-  test('publishes price alone when volume is unavailable', () => {
-    expect(formatStatus({ price: 0.4807, changePct: null }, null)).toBe('EKUBO $0.4807');
-  });
-
-  test('publishes volume alone when price is unavailable', () => {
-    expect(formatStatus(null, 25_700_000)).toBe('24h vol $25.7M');
-  });
-
-  test('is empty when neither half is available, which is the signal to keep the previous status', () => {
-    expect(formatStatus(null, null)).toBe('');
-  });
-
-  test('drops a non-finite price rather than rendering "$NaN"', () => {
-    expect(formatStatus({ price: NaN, changePct: null }, 25_700_000)).toBe('24h vol $25.7M');
+describe('fetchStatuses', () => {
+  test('prices fees and TVL with token decimals, and survives a failed STONX endpoint', async () => {
+    const { Effect } = await import('effect');
+    const { fetchStatuses } = await import('../src/presence');
+    const originalFetch = globalThis.fetch;
+    const day = new Date(Date.now() - 86400000).toISOString();
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/4663/')) return new Response('', { status: 503 });
+      let body: unknown;
+      if (url.endsWith('/overview/volume')) {
+        body = { volumeByTokenByDate: [
+          { chain_id: '0x1', token: '0x1', date: day, volume: '10000000', fees: '100000' }
+        ] };
+      } else if (url.endsWith('/overview/tvl')) {
+        body = { tvlByToken: [{ chain_id: 1, token: '0x1', balance: '50000000' }] };
+      } else if (url.endsWith('/tokens')) {
+        body = [{ chain_id: 1, address: '0x01', decimals: 6, usd_price: 2 }];
+      } else if (url.includes('price-history')) {
+        body = { data: [{ price: 1 }] };
+      } else {
+        body = { usd_price: 2 };
+      }
+      return Response.json(body);
+    }) as typeof fetch;
+    try {
+      const statuses = await Effect.runPromise(fetchStatuses({
+        enabled: true, apiBase: 'https://example.test', timeoutMs: 1000,
+        intervalMs: 300000, rotationMs: 5000
+      }));
+      expect(statuses).toEqual([
+        'EKUBO $2.0000 ▲100.0%', '24h vol $20', 'TVL $100', '24h fees $0'
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

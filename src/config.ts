@@ -144,6 +144,7 @@ export interface PresenceConfig {
   readonly enabled: boolean;
   readonly apiBase: string;
   readonly intervalMs: number;
+  readonly rotationMs: number;
   readonly timeoutMs: number;
 }
 
@@ -156,6 +157,7 @@ const presenceConfig: Config.Config<PresenceConfig> = Config.all({
   apiBase: Config.string('EKUBO_API_BASE').pipe(
     Config.withDefault('https://prod-api.ekubo.org')
   ),
+  rotationMs: Config.int('PRESENCE_ROTATION_MS').pipe(Config.withDefault(5_000)),
   intervalMs: Config.int('PRESENCE_INTERVAL_MS').pipe(Config.withDefault(300_000)),
   timeoutMs: Config.int('PRESENCE_TIMEOUT_MS').pipe(Config.withDefault(10_000))
 });

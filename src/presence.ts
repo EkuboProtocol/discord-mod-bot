@@ -3,12 +3,11 @@ import { ActivityType, type Client } from 'discord.js';
 import type { PresenceConfig } from './config';
 import { ApiError } from './errors';
 
-/**
- * Ekubo mainnet (chain 1) EKUBO token. The presence line is protocol-wide, so
- * the only per-token lookup is the price of EKUBO itself.
- */
+/** Token prices are chain-specific; volume, TVL and fees cover all chains. */
 const CHAIN_ID = 1;
 const EKUBO_ADDRESS = '0x04c46e830bb56ce22735d5d8fc9cb90309317d0f';
+const STONX_CHAIN_ID = 4663;
+const STONX_ADDRESS = '0x570c5aa79c798e7a418412cc8399ae5bcce570c5';
 
 export interface PriceInfo {
   readonly price: number;
@@ -56,7 +55,15 @@ const PriceHistoryResponse = Schema.Struct({
 const TokensResponse = Schema.Array(TokenRow);
 
 const VolumeOverviewResponse = Schema.Struct({
-  volumeByTokenByDate: Schema.Array(VolumeRow).pipe(Schema.withDecodingDefault(Effect.succeed([])))
+  volumeByTokenByDate: Schema.Array(Schema.Struct({ ...VolumeRow.fields, fees: Schema.Union([Schema.String, Schema.Number]) })).pipe(Schema.withDecodingDefault(Effect.succeed([])))
+});
+
+const TvlOverviewResponse = Schema.Struct({
+  tvlByToken: Schema.Array(Schema.Struct({
+    chain_id: ChainId,
+    token: Schema.String,
+    balance: Schema.Union([Schema.String, Schema.Number])
+  }))
 });
 
 /**
@@ -94,7 +101,7 @@ function fetchJson<A, I>(
 }
 
 /**
- * Current EKUBO price and its movement over the trailing 24 hours.
+ * Current token price and its movement over the trailing 24 hours.
  *
  * The live price comes from the token endpoint and the baseline from the oldest
  * bucket of the 24h history, so the percentage is genuinely "vs 24h ago" rather
@@ -102,11 +109,13 @@ function fetchJson<A, I>(
  */
 function fetchPrice(
   apiBase: string,
-  timeoutMs: number
+  timeoutMs: number,
+  chainId = CHAIN_ID,
+  address = EKUBO_ADDRESS
 ): Effect.Effect<PriceInfo | null, ApiError> {
-  const tokenUrl = `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}`;
+  const tokenUrl = `${apiBase}/tokens/${chainId}/${address}`;
   const historyUrl =
-    `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}/price-history` +
+    `${apiBase}/tokens/${chainId}/${address}/price-history` +
     '?interval=900&duration=86400';
 
   return Effect.gen(function* () {
@@ -193,30 +202,36 @@ export function latestCompleteDay(
   return days.length > 0 ? (days.sort().at(-1) ?? null) : null;
 }
 
-/**
- * Protocol-wide swap volume in USD for the last complete UTC day, summed across
- * every chain. Verified against DefiLlama's reported 24h figure to within ~1.5%,
- * which is what rules out the usual both-sides-of-the-swap double count.
- */
-function fetchVolumeUsd(
-  apiBase: string,
-  timeoutMs: number
-): Effect.Effect<number | null, ApiError> {
-  return Effect.gen(function* () {
-    const [overview, tokens] = yield* Effect.all(
-      [
-        fetchJson(`${apiBase}/overview/volume`, VolumeOverviewResponse, timeoutMs),
-        fetchJson(`${apiBase}/tokens`, TokensResponse, timeoutMs)
-      ],
-      { concurrency: 'unbounded' }
-    );
-
-    const rows = overview.volumeByTokenByDate;
-    const day = latestCompleteDay(rows);
-
-    return day === null ? null : sumDayVolumeUsd(rows, buildPriceMap(tokens), day);
-  });
+/** A failed endpoint omits its stats without blocking the rest of the rotation. */
+function optionalStat<A>(effect: Effect.Effect<A, ApiError>): Effect.Effect<A | null> {
+  return effect.pipe(Effect.catch(error =>
+    Effect.logWarning(`Presence data unavailable: ${error.message}`).pipe(Effect.as(null))
+  ));
 }
+
+export const fetchStatuses = Effect.fn('fetchStatuses')(function* (
+  { apiBase, timeoutMs }: PresenceConfig
+) {
+  const [price, stonx, overview, tvl, tokens] = yield* Effect.all([
+    optionalStat(fetchPrice(apiBase, timeoutMs)),
+    optionalStat(fetchPrice(apiBase, timeoutMs, STONX_CHAIN_ID, STONX_ADDRESS)),
+    optionalStat(fetchJson(`${apiBase}/overview/volume`, VolumeOverviewResponse, timeoutMs)),
+    optionalStat(fetchJson(`${apiBase}/overview/tvl`, TvlOverviewResponse, timeoutMs)),
+    optionalStat(fetchJson(`${apiBase}/tokens`, TokensResponse, timeoutMs))
+  ], { concurrency: 'unbounded' });
+  const priceMap = buildPriceMap(tokens ?? []);
+  const rows = overview?.volumeByTokenByDate ?? [];
+  const day = latestCompleteDay(rows);
+  const canPriceDay = day !== null && tokens !== null;
+  const volume = canPriceDay ? sumDayVolumeUsd(rows, priceMap, day) : null;
+  const fees = canPriceDay ? sumDayVolumeUsd(
+    rows.map(row => ({ ...row, volume: row.fees })), priceMap, day
+  ) : null;
+  const tvlUsd = tvl && tokens ? sumDayVolumeUsd(
+    tvl.tvlByToken.map(row => ({ ...row, date: '', volume: row.balance })), priceMap, ''
+  ) : null;
+  return formatStatuses(price, volume, tvlUsd, fees, stonx);
+});
 
 /** Compact USD, e.g. `$25.7M`. */
 export function formatUsdCompact(value: number): string {
@@ -236,74 +251,59 @@ export function formatChange(changePct: number | null): string {
   return ` ${arrow}${Math.abs(changePct).toFixed(1)}%`;
 }
 
-/** Compose the status line, e.g. `EKUBO $0.4807 ▲2.5% · 24h vol $25.7M`. */
-export function formatStatus(priceInfo: PriceInfo | null, volumeUsd: number | null): string {
-  const parts: string[] = [];
-
-  if (priceInfo && Number.isFinite(priceInfo.price)) {
-    parts.push(`EKUBO $${priceInfo.price.toFixed(4)}${formatChange(priceInfo.changePct)}`);
-  }
-  if (volumeUsd !== null && Number.isFinite(volumeUsd)) {
-    parts.push(`24h vol ${formatUsdCompact(volumeUsd)}`);
-  }
-
-  return parts.join(' · ');
+/** One short stat per status so the value stays visible on narrow screens. */
+export function formatStatuses(
+  price: PriceInfo | null,
+  volume: number | null,
+  tvl: number | null,
+  fees: number | null,
+  stonx: PriceInfo | null
+): string[] {
+  return [
+    formatPrice('EKUBO', price),
+    formatMetric('24h vol', volume),
+    formatMetric('TVL', tvl),
+    formatMetric('24h fees', fees),
+    formatPrice('STONX', stonx)
+  ].filter(status => status !== '');
 }
 
-/**
- * Fetch both halves of the summary and publish them as the bot's status.
- *
- * Bots cannot use Rich Presence (that is a local-IPC feature of the desktop
- * client); the gateway equivalent is a custom activity, which is what this sets.
- */
-export function updatePresence(
-  client: Client,
-  presenceConfig: PresenceConfig
-): Effect.Effect<void, ApiError> {
-  const { apiBase, timeoutMs } = presenceConfig;
+function formatPrice(symbol: string, info: PriceInfo | null): string {
+  return info && Number.isFinite(info.price)
+    ? `${symbol} $${info.price.toFixed(4)}${formatChange(info.changePct)}`
+    : '';
+}
 
-  return Effect.gen(function* () {
-    const [priceInfo, volumeUsd] = yield* Effect.all(
-      [fetchPrice(apiBase, timeoutMs), fetchVolumeUsd(apiBase, timeoutMs)],
-      { concurrency: 'unbounded' }
+function formatMetric(label: string, value: number | null): string {
+  return value !== null && Number.isFinite(value) ? `${label} ${formatUsdCompact(value)}` : '';
+}
+
+/** Independent scoped loops keep rotation smooth even while API requests are slow. */
+export function presenceLoop(client: Client, config: PresenceConfig): Effect.Effect<void> {
+  if (!config.enabled) return Effect.logInfo('Presence updates disabled');
+
+  return Effect.suspend(() => {
+    let statuses: string[] = [];
+    let index = 0;
+    const refresh = fetchStatuses(config).pipe(
+      Effect.tap(next => Effect.sync(() => {
+        if (next.length > 0) statuses = next;
+      })),
+      Effect.catchCause(cause => Effect.logWarning('Presence refresh failed', cause)),
+      Effect.repeat(Schedule.spaced(Duration.millis(config.intervalMs)))
     );
-
-    const status = formatStatus(priceInfo, volumeUsd);
-    if (!status) {
-      yield* Effect.logWarning('Presence: no data available, leaving previous status in place');
-      return;
-    }
-
-    client.user?.setPresence({
-      activities: [{ type: ActivityType.Custom, name: 'ekubo-stats', state: status }],
-      status: 'online'
-    });
-    yield* Effect.logInfo(`Presence updated: ${status}`);
+    const rotate = Effect.sync(() => {
+      if (statuses.length === 0 || !client.user) return;
+      const status = statuses[index % statuses.length]!;
+      client.user.setPresence({
+        activities: [{ type: ActivityType.Custom, name: 'ekubo-stats', state: status }],
+        status: 'online'
+      });
+      index = (index + 1) % statuses.length;
+    }).pipe(
+      Effect.catchCause(cause => Effect.logWarning('Presence update failed', cause)),
+      Effect.repeat(Schedule.spaced(Duration.millis(Math.max(5_000, config.rotationMs))))
+    );
+    return Effect.all([refresh, rotate], { concurrency: 'unbounded' }).pipe(Effect.asVoid);
   });
-}
-
-/**
- * Publish the summary now and on an interval for as long as the bot runs.
- *
- * Moderation is the bot's actual job, so every failure is absorbed here: a
- * flaky stats endpoint must never take the process down or clear a status that
- * was previously fine. The loop is a fiber rather than a `setInterval`, so it
- * is interrupted with the rest of the app on shutdown instead of needing an
- * `unref` to avoid pinning the process open.
- */
-export function presenceLoop(
-  client: Client,
-  presenceConfig: PresenceConfig
-): Effect.Effect<void> {
-  if (!presenceConfig.enabled) {
-    return Effect.logInfo('Presence updates disabled');
-  }
-
-  return updatePresence(client, presenceConfig).pipe(
-    Effect.catch(error =>
-      Effect.logWarning(`Presence update failed, keeping previous status: ${error.message}`)
-    ),
-    Effect.repeat(Schedule.spaced(Duration.millis(presenceConfig.intervalMs))),
-    Effect.asVoid
-  );
 }
