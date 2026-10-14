@@ -1,0 +1,45 @@
+name: Checks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Format, lint, types and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun ci
+
+      # Every step runs even when an earlier one fails, so one push reports
+      # every kind of problem at once.
+      - name: Format
+        run: bun run format:check
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: bun run lint
+
+      - name: Type check
+        if: ${{ !cancelled() }}
+        run: bun run typecheck
+
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: bun test

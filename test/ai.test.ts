@@ -72,7 +72,8 @@ describe('buildRequest', () => {
   };
 
   test.each(['gpt-5-mini', 'gpt-5.6-luna', 'o3-mini'])(
-    'uses reasoning-compatible parameters for %s', model => {
+    'uses reasoning-compatible parameters for %s',
+    model => {
       const request = buildRequest(model, input);
 
       expect(request.messages[0]).toEqual({ role: 'developer', content: SYSTEM_PROMPT });

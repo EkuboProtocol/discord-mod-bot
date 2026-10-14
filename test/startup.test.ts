@@ -31,25 +31,34 @@ describe('OpenAI startup check', () => {
   test('uses the configured model and production request builder with synthetic input', async () => {
     const { moderator, requests } = fixture(completion(JSON.stringify(CLEAN)));
     await Effect.runPromise(moderator.startupCheck);
-    expect(requests).toEqual([buildRequest(model, {
-      content: 'Hello everyone! Where can I find the documentation?',
-      previousMessages: [],
-      meta: { author: 'Startup check', roles: [] }
-    })]);
+    expect(requests).toEqual([
+      buildRequest(model, {
+        content: 'Hello everyone! Where can I find the documentation?',
+        previousMessages: [],
+        meta: { author: 'Startup check', roles: [] }
+      })
+    ]);
   });
 
   test.each([
-    ['API parameter error', { error: { message: 'Unsupported temperature', type: 'invalid_request_error' } }, 400],
+    [
+      'API parameter error',
+      { error: { message: 'Unsupported temperature', type: 'invalid_request_error' } },
+      400
+    ],
     ['invalid JSON', completion('not JSON'), 200],
     ['invalid verdict', completion('{}'), 200],
     ['empty completion', completion(null), 200],
     ['truncated completion', completion(JSON.stringify(CLEAN), 'length'), 200],
     ['refused completion', completion(null, 'content_filter'), 200],
     ['missing choice', { choices: [] }, 200]
-  ] as const)('fails startup on %s while live moderation still fails open', async (_name, body, status) => {
-    const { moderator } = fixture(body, status);
-    const exit = await Effect.runPromiseExit(moderator.startupCheck);
-    expect(Exit.isFailure(exit)).toBe(true);
-    expect(await Effect.runPromise(moderator.check(input))).toEqual(CLEAN);
-  });
+  ] as const)(
+    'fails startup on %s while live moderation still fails open',
+    async (_name, body, status) => {
+      const { moderator } = fixture(body, status);
+      const exit = await Effect.runPromiseExit(moderator.startupCheck);
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(await Effect.runPromise(moderator.check(input))).toEqual(CLEAN);
+    }
+  );
 });

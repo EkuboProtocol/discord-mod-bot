@@ -24,17 +24,20 @@ A Bun + TypeScript bot for Discord that uses AI to automatically moderate messag
 ## Installation
 
 1. Clone this repository:
+
    ```bash
    git clone https://github.com/EkuboProtocol/discord-mod-bot.git
    cd discord-mod-bot
    ```
 
 2. Install dependencies:
+
    ```bash
    bun install
    ```
 
 3. Create a `.env` file based on the example:
+
    ```bash
    cp .env.example .env
    nano .env  # Edit with your actual credentials
@@ -59,12 +62,14 @@ Start the bot directly with Bun:
 bun run src/index.ts
 ```
 
-TypeScript is executed as-is; there is no build step. To check types and the
-complexity gate the way CI does:
+TypeScript is executed as-is; there is no build step. To run the checks the
+way CI does:
 
 ```bash
-bun run typecheck
+bun run format:check
 bun run lint
+bun run typecheck
+bun test
 ```
 
 ### Startup validation
@@ -116,6 +121,7 @@ Options:
 ```
 
 Example:
+
 ```bash
 bun run src/index.ts --token=your_token --server=your_server_id --channels=channel1,channel2 --excluded-roles=role1,role2 --openai-model=gpt-4
 ```
@@ -123,16 +129,19 @@ bun run src/index.ts --token=your_token --server=your_server_id --channels=chann
 ### Setting Up as a Systemd Service
 
 1. Copy the service file to systemd:
+
    ```bash
    sudo cp discord-mod-bot.service /etc/systemd/system/
    ```
 
 2. Edit the service file to match your environment:
+
    ```bash
    sudo nano /etc/systemd/system/discord-mod-bot.service
    ```
-   
+
 3. Reload systemd, enable and start the service:
+
    ```bash
    sudo systemctl daemon-reload
    sudo systemctl enable discord-mod-bot
@@ -157,6 +166,7 @@ The repository includes a ready-to-use App Platform spec at `.do/app.yaml` that 
    ```bash
    doctl apps create --spec .do/app.yaml
    ```
+
 > **The live spec is the source of truth, not this file.** `deploy_on_push` only
 > rebuilds the source; it does not re-read `.do/app.yaml`. Changing the build or
 > run command here has no effect until you run `doctl apps update` (below), so
@@ -173,9 +183,9 @@ The repository includes a ready-to-use App Platform spec at `.do/app.yaml` that 
 
 The spec lists the variables the worker expects:
 
-- `DISCORD_TOKEN` *(secret)* – Discord bot token
+- `DISCORD_TOKEN` _(secret)_ – Discord bot token
 - `DISCORD_SERVER_ID` – ID of the Discord server to moderate
-- `OPENAI_API_KEY` *(secret)* – OpenAI API key
+- `OPENAI_API_KEY` _(secret)_ – OpenAI API key
 - `OPENAI_MODEL` – Model to use (defaults to `gpt-3.5-turbo`)
 - `LOG_LEVEL` – Logging verbosity (`error`, `warn`, `info`, `debug`)
 - `CONTEXT_MESSAGE_COUNT` – Number of prior messages to send for context
@@ -211,12 +221,14 @@ If a required setting is missing, the bot names it at startup along with both wa
 ## Logging
 
 Logs are stored in the `logs` directory:
+
 - `logs/combined.log`: Contains all log messages
 - `logs/error.log`: Contains only error messages
 
 ## Moderation Rules
 
 The bot monitors messages for:
+
 1. Messages containing suspicious links or asking users to open tickets
 2. Messages asking users to DM for support instead of using public channels
 3. Generic job-seeking messages that appear to be copy-pasted
@@ -247,6 +259,7 @@ For more advanced integrations with fewer permissions, you could modify this cod
 ### 3. User Account Token (Not Recommended)
 
 While technically possible to use a user account token instead of a bot token, this approach:
+
 - Violates Discord's Terms of Service
 - Can result in account termination
 - Is not supported by this code

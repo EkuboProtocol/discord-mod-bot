@@ -117,7 +117,9 @@ describe('channelNotice', () => {
   test('a delete-only removal mentions no punishment', () => {
     const text = channelNotice({ ...base, outcome: { _tag: 'DeletedOnly' } });
 
-    expect(text).toBe('⚠️ Removed a message from <@1> that violated server rules. Reason: phishing');
+    expect(text).toBe(
+      '⚠️ Removed a message from <@1> that violated server rules. Reason: phishing'
+    );
     expect(text).not.toContain('timed out');
   });
 
@@ -168,7 +170,7 @@ describe('reportEmbed', () => {
     expect(byName.Timestamp).toBe('2026-09-01T12:00:00.000Z');
   });
 
-  test('keeps message content inside Discord\'s 1024-character field limit', () => {
+  test("keeps message content inside Discord's 1024-character field limit", () => {
     // Over the limit the whole embed is rejected and the audit trail is lost.
     const long = 'x'.repeat(5000);
 
@@ -223,9 +225,7 @@ describe('skipReason', () => {
     };
 
     expect(skipReason(facts, allowList)).toBeNull();
-    expect(skipReason({ ...facts, channelId: 'other' }, allowList)).toBe(
-      'channel-not-moderated'
-    );
+    expect(skipReason({ ...facts, channelId: 'other' }, allowList)).toBe('channel-not-moderated');
   });
 
   test('excluded channels win over the allow-list', () => {

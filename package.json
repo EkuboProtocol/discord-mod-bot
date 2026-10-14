@@ -8,10 +8,12 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "test": "bun test",
-    "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
-    "lint:prune": "eslint . --prune-suppressions"
+    "build": "bun run typecheck",
+    "typecheck": "bun node_modules/@typescript/native/bin/tsc -b",
+    "lint": "bun scripts/lint.ts",
+    "lint:prune": "bun scripts/lint.ts --prune",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
   },
   "repository": {
     "type": "git",
@@ -39,9 +41,9 @@
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "@types/yargs": "^17.0.33",
-    "eslint": "^9.21.0",
-    "prettier": "^3.5.3",
-    "typescript": "^5.7.0",
-    "typescript-eslint": "^8.0.0"
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "^7.0.2004"
   }
 }

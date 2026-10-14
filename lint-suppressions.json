@@ -1,0 +1,47 @@
+{
+  "src/config.ts": {
+    "typescript(no-unnecessary-type-assertion)": {
+      "count": 1
+    }
+  },
+  "src/discord.ts": {
+    "typescript(restrict-template-expressions)": {
+      "count": 1
+    }
+  },
+  "src/errors.ts": {
+    "typescript(no-unnecessary-type-assertion)": {
+      "count": 1
+    }
+  },
+  "src/logging.ts": {
+    "typescript(restrict-template-expressions)": {
+      "count": 2
+    }
+  },
+  "src/presence.ts": {
+    "typescript(no-unnecessary-type-assertion)": {
+      "count": 3
+    }
+  },
+  "test/discord.test.ts": {
+    "typescript(only-throw-error)": {
+      "count": 2
+    }
+  },
+  "test/moderation.test.ts": {
+    "typescript(no-unnecessary-type-assertion)": {
+      "count": 3
+    }
+  },
+  "test/presence.test.ts": {
+    "typescript(no-base-to-string)": {
+      "count": 1
+    }
+  },
+  "test/startup.test.ts": {
+    "typescript(no-base-to-string)": {
+      "count": 1
+    }
+  }
+}

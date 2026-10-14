@@ -18,9 +18,7 @@ function resolve<A>(
     ConfigProvider.fromEnvRecord(env)
   );
 
-  return Effect.runPromise(
-    config.pipe(Effect.provide(ConfigProvider.layer(provider)))
-  );
+  return Effect.runPromise(config.pipe(Effect.provide(ConfigProvider.layer(provider))));
 }
 
 describe('configuration precedence', () => {
@@ -58,10 +56,7 @@ describe('configuration precedence', () => {
   });
 
   test('an absent optional list stays absent rather than becoming empty', async () => {
-    const channels = Config.string('MODERATED_CHANNELS').pipe(
-      Config.map(splitList),
-      Config.option
-    );
+    const channels = Config.string('MODERATED_CHANNELS').pipe(Config.map(splitList), Config.option);
 
     expect(await resolve(channels, {}, {})).toEqual(Option.none());
     expect(await resolve(channels, {}, { MODERATED_CHANNELS: 'a,b' })).toEqual(
@@ -73,10 +68,7 @@ describe('configuration precedence', () => {
     // The README tells App Platform users to "leave blank to use defaults", and
     // an empty MODERATED_CHANNELS that decoded to `Some([])` would moderate
     // nothing at all — the opposite of the documented default.
-    const channels = Config.string('MODERATED_CHANNELS').pipe(
-      Config.map(splitList),
-      Config.option
-    );
+    const channels = Config.string('MODERATED_CHANNELS').pipe(Config.map(splitList), Config.option);
 
     expect(await resolve(channels, {}, { MODERATED_CHANNELS: '' })).toEqual(Option.none());
   });

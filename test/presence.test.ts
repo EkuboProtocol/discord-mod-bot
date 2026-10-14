@@ -14,16 +14,19 @@ describe('buildPriceMap', () => {
     // abbreviates native ETH as "0x0" while the token list spells the zero
     // address out in full; a string compare would drop the largest row.
     const map = buildPriceMap([
-      { chain_id: 1, address: '0x0000000000000000000000000000000000000000', usd_price: 3000, decimals: 18 }
+      {
+        chain_id: 1,
+        address: '0x0000000000000000000000000000000000000000',
+        usd_price: 3000,
+        decimals: 18
+      }
     ]);
 
     expect(map.get('1:0')).toEqual({ usdPrice: 3000, decimals: 18 });
   });
 
   test('treats equivalent chain id encodings as the same key', () => {
-    const map = buildPriceMap([
-      { chain_id: '1', address: '0x1', usd_price: 5, decimals: 6 }
-    ]);
+    const map = buildPriceMap([{ chain_id: '1', address: '0x1', usd_price: 5, decimals: 6 }]);
 
     expect(map.get('1:1')).toEqual({ usdPrice: 5, decimals: 6 });
   });
@@ -40,9 +43,7 @@ describe('buildPriceMap', () => {
   });
 
   test('keeps a zero price, which is a real value and not a missing one', () => {
-    const map = buildPriceMap([
-      { chain_id: 1, address: '0x1', usd_price: 0, decimals: 18 }
-    ]);
+    const map = buildPriceMap([{ chain_id: 1, address: '0x1', usd_price: 0, decimals: 18 }]);
 
     expect(map.get('1:1')?.usdPrice).toBe(0);
   });
@@ -73,9 +74,7 @@ describe('sumDayVolumeUsd', () => {
   });
 
   test('matches on the date prefix of a full timestamp', () => {
-    const rows = [
-      { date: '2026-08-29T00:00:00Z', chain_id: 1, token: '0x2', volume: '3000000' }
-    ];
+    const rows = [{ date: '2026-08-29T00:00:00Z', chain_id: 1, token: '0x2', volume: '3000000' }];
 
     expect(sumDayVolumeUsd(rows, priceMap, '2026-08-29')).toBe(3);
   });
@@ -161,16 +160,24 @@ describe('formatChange', () => {
 
 describe('formatStatuses', () => {
   test('rotates one stat per line, including Robinhood Chain STONX', () => {
-    expect(formatStatuses({ price: 0.4807, changePct: 1.7 }, 25_700_000,
-      12_000_000, 45_000, { price: 1.0282, changePct: -2.5 })).toEqual([
-      'EKUBO $0.4807 ▲1.7%', '24h vol $25.7M', 'TVL $12.0M',
-      '24h fees $45.0K', 'STONX $1.0282 ▼2.5%'
+    expect(
+      formatStatuses({ price: 0.4807, changePct: 1.7 }, 25_700_000, 12_000_000, 45_000, {
+        price: 1.0282,
+        changePct: -2.5
+      })
+    ).toEqual([
+      'EKUBO $0.4807 ▲1.7%',
+      '24h vol $25.7M',
+      'TVL $12.0M',
+      '24h fees $45.0K',
+      'STONX $1.0282 ▼2.5%'
     ]);
   });
 
   test('omits unavailable and non-finite stats but retains zero', () => {
-    expect(formatStatuses(null, 0, NaN, Infinity, { price: NaN, changePct: null }))
-      .toEqual(['24h vol $0']);
+    expect(formatStatuses(null, 0, NaN, Infinity, { price: NaN, changePct: null })).toEqual([
+      '24h vol $0'
+    ]);
     expect(formatStatuses(null, null, null, null, null)).toEqual([]);
   });
 });
@@ -186,9 +193,11 @@ describe('fetchStatuses', () => {
       if (url.includes('/4663/')) return new Response('', { status: 503 });
       let body: unknown;
       if (url.endsWith('/overview/volume')) {
-        body = { volumeByTokenByDate: [
-          { chain_id: '0x1', token: '0x1', date: day, volume: '10000000', fees: '100000' }
-        ] };
+        body = {
+          volumeByTokenByDate: [
+            { chain_id: '0x1', token: '0x1', date: day, volume: '10000000', fees: '100000' }
+          ]
+        };
       } else if (url === 'https://api.llama.fi/tvl/ekubo') {
         body = 28_262_202.66;
       } else if (url.endsWith('/tokens')) {
@@ -201,12 +210,20 @@ describe('fetchStatuses', () => {
       return Response.json(body);
     }) as typeof fetch;
     try {
-      const statuses = await Effect.runPromise(fetchStatuses({
-        enabled: true, apiBase: 'https://example.test', timeoutMs: 1000,
-        intervalMs: 300000, rotationMs: 5000
-      }));
+      const statuses = await Effect.runPromise(
+        fetchStatuses({
+          enabled: true,
+          apiBase: 'https://example.test',
+          timeoutMs: 1000,
+          intervalMs: 300000,
+          rotationMs: 5000
+        })
+      );
       expect(statuses).toEqual([
-        'EKUBO $2.0000 ▲100.0%', '24h vol $20', 'TVL $28.3M', '24h fees $0'
+        'EKUBO $2.0000 ▲100.0%',
+        '24h vol $20',
+        'TVL $28.3M',
+        '24h fees $0'
       ]);
     } finally {
       globalThis.fetch = originalFetch;

@@ -144,9 +144,7 @@ export function applyAction(
         message.guild.members.ban(message.author.id, { reason: `Automated ban: ${reason}` })
       ).pipe(
         Effect.tap(() =>
-          Effect.logInfo(
-            `Applied automatic ban to ${message.author.tag} - high severity spam/scam`
-          )
+          Effect.logInfo(`Applied automatic ban to ${message.author.tag} - high severity spam/scam`)
         ),
         Effect.as<Outcome>({ _tag: 'Banned' }),
         Effect.catch(error =>
@@ -209,9 +207,7 @@ function postChannelNotice(message: Message<true>, outcome: Outcome, reason: str
 
     yield* Effect.sleep(NOTICE_LIFETIME).pipe(
       Effect.andThen(deleteIfPresent(notice, 'Could not delete notification message')),
-      Effect.catch(error =>
-        Effect.logWarning('Could not delete notification message', error)
-      ),
+      Effect.catch(error => Effect.logWarning('Could not delete notification message', error)),
       Effect.forkDetach
     );
   });
@@ -372,8 +368,7 @@ const handleMessage = (client: Client, message: Message) =>
 
     yield* Option.match(config.notificationChannelId, {
       onNone: () => Effect.void,
-      onSome: channelId =>
-        postReport(client, channelId, guildMessage, outcome, severity, reason)
+      onSome: channelId => postReport(client, channelId, guildMessage, outcome, severity, reason)
     });
   }).pipe(
     Effect.catchCause(cause =>
@@ -416,7 +411,11 @@ function updateReport(
   ).pipe(Effect.catch(error => Effect.logWarning('Could not update report embed', error)));
 }
 
-function banUser(interaction: ButtonInteraction, guild: Guild, target: ButtonTarget): Effect.Effect<string, DiscordError> {
+function banUser(
+  interaction: ButtonInteraction,
+  guild: Guild,
+  target: ButtonTarget
+): Effect.Effect<string, DiscordError> {
   const by = interaction.user.tag;
 
   return discord('ban via button', () =>
@@ -436,7 +435,11 @@ function banUser(interaction: ButtonInteraction, guild: Guild, target: ButtonTar
   );
 }
 
-function unbanUser(interaction: ButtonInteraction, guild: Guild, target: ButtonTarget): Effect.Effect<string, DiscordError> {
+function unbanUser(
+  interaction: ButtonInteraction,
+  guild: Guild,
+  target: ButtonTarget
+): Effect.Effect<string, DiscordError> {
   const by = interaction.user.tag;
 
   return discord('unban via button', () =>
@@ -467,9 +470,9 @@ function purgeChannel(channel: TextChannel, userId: string): Effect.Effect<numbe
     Effect.flatMap(mine =>
       mine.size === 0
         ? Effect.succeed(0)
-        : discord(`bulk delete in #${channel.name}`, () =>
-            channel.bulkDelete(mine)
-          ).pipe(Effect.as(mine.size))
+        : discord(`bulk delete in #${channel.name}`, () => channel.bulkDelete(mine)).pipe(
+            Effect.as(mine.size)
+          )
     ),
     // One channel the bot cannot read must not abort the sweep of the others.
     Effect.catch(error =>
@@ -480,14 +483,8 @@ function purgeChannel(channel: TextChannel, userId: string): Effect.Effect<numbe
   );
 }
 
-function deleteRecentMessages(
-  interaction: ButtonInteraction,
-  guild: Guild,
-  target: ButtonTarget
-) {
-  const channels = [
-    ...guild.channels.cache.filter((c): c is TextChannel => c.type === 0).values()
-  ];
+function deleteRecentMessages(interaction: ButtonInteraction, guild: Guild, target: ButtonTarget) {
+  const channels = [...guild.channels.cache.filter((c): c is TextChannel => c.type === 0).values()];
 
   return Effect.forEach(channels, channel => purgeChannel(channel, target.userId)).pipe(
     Effect.map(counts => counts.reduce((sum, n) => sum + n, 0)),
@@ -535,10 +532,7 @@ const handleInteraction = (client: Client, interaction: Interaction) =>
     }
 
     if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.BanMembers)) {
-      return yield* ephemeral(
-        interaction,
-        '❌ You do not have permission to perform this action.'
-      );
+      return yield* ephemeral(interaction, '❌ You do not have permission to perform this action.');
     }
 
     yield* discord('defer interaction reply', () =>
@@ -591,14 +585,10 @@ export function describeSetup(client: Client, config: AppConfigShape) {
         onSome: ids => `Moderating specific channels: ${ids.join(', ')}`
       })
     );
-    yield* Effect.logInfo(
-      `Excluded channels: ${config.excludedChannels.join(', ') || 'None'}`
-    );
+    yield* Effect.logInfo(`Excluded channels: ${config.excludedChannels.join(', ') || 'None'}`);
     yield* Effect.logInfo(`Excluded roles: ${config.excludedRoles.join(', ') || 'None'}`);
     yield* Effect.logInfo(`Using OpenAI model: ${config.openaiModel}`);
-    yield* Effect.logInfo(
-      `Using ${config.contextMessageCount} previous messages for context`
-    );
+    yield* Effect.logInfo(`Using ${config.contextMessageCount} previous messages for context`);
 
     yield* Option.match(config.notificationChannelId, {
       onNone: () => Effect.void,
