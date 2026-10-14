@@ -59,12 +59,14 @@ Start the bot directly with Bun:
 bun run src/index.ts
 ```
 
-TypeScript is executed as-is; there is no build step. To check types and the
-complexity gate the way CI does:
+TypeScript is executed as-is; there is no build step. To run the checks the
+way CI does:
 
 ```bash
-bun run typecheck
+bun run format:check
 bun run lint
+bun run typecheck
+bun test
 ```
 
 ### Startup validation
