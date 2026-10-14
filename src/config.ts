@@ -66,8 +66,7 @@ const FLAGS = {
   TIMEOUT_DURATION: {
     flag: 'timeout-duration',
     alias: 'd',
-    description:
-      'Duration in minutes to timeout users when their message is deleted (0 to disable)'
+    description: 'Duration in minutes to timeout users when their message is deleted (0 to disable)'
   }
 } as const satisfies Record<string, { flag: string; alias?: string; description: string }>;
 
@@ -88,7 +87,9 @@ export function flagFor(envName: string): string | null {
  * below, which sit underneath both sources.
  */
 export function parseCli(argv: ReadonlyArray<string>): Record<string, string> {
-  let parser = yargs(hideBin(argv as string[])).help().alias('help', 'h');
+  let parser = yargs(hideBin(argv as string[]))
+    .help()
+    .alias('help', 'h');
 
   for (const [envName, spec] of Object.entries(FLAGS)) {
     parser = parser.option(spec.flag, {
@@ -154,9 +155,7 @@ export interface PresenceConfig {
  */
 const presenceConfig: Config.Config<PresenceConfig> = Config.all({
   enabled: Config.boolean('PRESENCE_ENABLED').pipe(Config.withDefault(true)),
-  apiBase: Config.string('EKUBO_API_BASE').pipe(
-    Config.withDefault('https://prod-api.ekubo.org')
-  ),
+  apiBase: Config.string('EKUBO_API_BASE').pipe(Config.withDefault('https://prod-api.ekubo.org')),
   rotationMs: Config.int('PRESENCE_ROTATION_MS').pipe(Config.withDefault(5_000)),
   intervalMs: Config.int('PRESENCE_INTERVAL_MS').pipe(Config.withDefault(300_000)),
   timeoutMs: Config.int('PRESENCE_TIMEOUT_MS').pipe(Config.withDefault(10_000))
@@ -251,8 +250,7 @@ export function makeConfigProvider(
 export class AppConfig extends Context.Service<AppConfig, AppConfigShape>()(
   'discord-mod-bot/AppConfig'
 ) {
-  static readonly layer = Layer.effect(
-    AppConfig,
-    appConfig.pipe(Effect.map(AppConfig.of))
-  ).pipe(Layer.provide(ConfigProvider.layer(makeConfigProvider())));
+  static readonly layer = Layer.effect(AppConfig, appConfig.pipe(Effect.map(AppConfig.of))).pipe(
+    Layer.provide(ConfigProvider.layer(makeConfigProvider()))
+  );
 }

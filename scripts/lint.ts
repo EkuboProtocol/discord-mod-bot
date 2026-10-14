@@ -26,26 +26,20 @@ interface Diagnostic {
 const args = process.argv.slice(2);
 const prune = args.includes('--prune');
 const suppressRules = args
-  .filter((arg) => arg.startsWith('--suppress-rule='))
-  .map((arg) => arg.slice('--suppress-rule='.length));
-const oxlintArgs = args.filter(
-  (arg) => arg !== '--prune' && !arg.startsWith('--suppress-rule=')
-);
+  .filter(arg => arg.startsWith('--suppress-rule='))
+  .map(arg => arg.slice('--suppress-rule='.length));
+const oxlintArgs = args.filter(arg => arg !== '--prune' && !arg.startsWith('--suppress-rule='));
 
-const result = Bun.spawnSync(
-  ['oxlint', '--format=json', '--max-warnings=0', ...oxlintArgs],
-  { stdout: 'pipe', stderr: 'inherit' }
-);
+const result = Bun.spawnSync(['oxlint', '--format=json', '--max-warnings=0', ...oxlintArgs], {
+  stdout: 'pipe',
+  stderr: 'inherit'
+});
 let diagnostics: Diagnostic[];
 try {
-  diagnostics = (
-    JSON.parse(result.stdout.toString()) as { diagnostics: Diagnostic[] }
-  ).diagnostics;
+  diagnostics = (JSON.parse(result.stdout.toString()) as { diagnostics: Diagnostic[] }).diagnostics;
 } catch {
   console.error(result.stdout.toString());
-  console.error(
-    `oxlint did not produce a report (exit code ${result.exitCode})`
-  );
+  console.error(`oxlint did not produce a report (exit code ${result.exitCode})`);
   process.exit(result.exitCode || 1);
 }
 
@@ -60,18 +54,14 @@ for (const diagnostic of diagnostics) {
   list.push(diagnostic);
 }
 
-const suppressions = JSON.parse(
-  readFileSync(SUPPRESSIONS_FILE, 'utf8')
-) as Suppressions;
+const suppressions = JSON.parse(readFileSync(SUPPRESSIONS_FILE, 'utf8')) as Suppressions;
 
 function write(next: Suppressions) {
   const sorted: Suppressions = {};
   for (const file of Object.keys(next).sort()) {
     const rules = Object.keys(next[file]!).sort();
     if (rules.length === 0) continue;
-    sorted[file] = Object.fromEntries(
-      rules.map((rule) => [rule, next[file]![rule]!])
-    );
+    sorted[file] = Object.fromEntries(rules.map(rule => [rule, next[file]![rule]!]));
   }
   writeFileSync(SUPPRESSIONS_FILE, `${JSON.stringify(sorted, null, 2)}\n`);
 }

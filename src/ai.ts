@@ -170,35 +170,34 @@ export class Moderator extends Context.Service<
 
 /** Shared request/decode path, with distinct startup and live-message failure policies. */
 export function createModerator(client: OpenAI, model: string): Moderator['Service'] {
-  const requestVerdict = Effect.fn('Moderator.requestVerdict')(
-    function* (input: CheckInput) {
-      const response = yield* Effect.tryPromise({
-        try: signal =>
-          client.chat.completions.create(buildRequest(model, input), { signal }),
-        catch: cause => new OpenAiError({ cause })
-      }).pipe(
-        // The original had no bound here, so a stalled request pinned the
-        // message handler open indefinitely.
-        Effect.timeout(Duration.seconds(30))
-      );
+  const requestVerdict = Effect.fn('Moderator.requestVerdict')(function* (input: CheckInput) {
+    const response = yield* Effect.tryPromise({
+      try: signal => client.chat.completions.create(buildRequest(model, input), { signal }),
+      catch: cause => new OpenAiError({ cause })
+    }).pipe(
+      // The original had no bound here, so a stalled request pinned the
+      // message handler open indefinitely.
+      Effect.timeout(Duration.seconds(30))
+    );
 
-      const choice = response.choices[0];
-      if (!choice || choice.finish_reason !== 'stop' || !choice.message.content) {
-        return yield* new OpenAiError({
-          cause: new Error(`No complete moderation verdict (finish_reason: ${choice?.finish_reason ?? 'missing'})`)
-        });
-      }
-      const raw = choice.message.content;
-      yield* Effect.logDebug('OpenAI verdict', raw);
-
-      const parsed = yield* Effect.try({
-        try: () => JSON.parse(raw) as unknown,
-        catch: cause => new OpenAiError({ cause })
+    const choice = response.choices[0];
+    if (!choice || choice.finish_reason !== 'stop' || !choice.message.content) {
+      return yield* new OpenAiError({
+        cause: new Error(
+          `No complete moderation verdict (finish_reason: ${choice?.finish_reason ?? 'missing'})`
+        )
       });
+    }
+    const raw = choice.message.content;
+    yield* Effect.logDebug('OpenAI verdict', raw);
 
-      return yield* decodeVerdict(parsed);
-    },
-  );
+    const parsed = yield* Effect.try({
+      try: () => JSON.parse(raw) as unknown,
+      catch: cause => new OpenAiError({ cause })
+    });
+
+    return yield* decodeVerdict(parsed);
+  });
 
   const check = Effect.fn('Moderator.check')(
     (input: CheckInput) => requestVerdict(input),
@@ -213,7 +212,9 @@ export function createModerator(client: OpenAI, model: string): Moderator['Servi
   }).pipe(
     Effect.asVoid,
     Effect.mapError(cause => new OpenAiError({ cause })),
-    Effect.tapCause(cause => Effect.logError(`OpenAI startup check failed for model ${model}`, cause))
+    Effect.tapCause(cause =>
+      Effect.logError(`OpenAI startup check failed for model ${model}`, cause)
+    )
   );
 
   return Moderator.of({ check, startupCheck });

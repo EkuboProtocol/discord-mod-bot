@@ -66,10 +66,7 @@ export type Action =
   | { readonly _tag: 'Timeout'; readonly minutes: number }
   | { readonly _tag: 'DeleteOnly' };
 
-export function actionFor(
-  severity: Severity | 'unknown',
-  timeoutDuration: number
-): Action {
+export function actionFor(severity: Severity | 'unknown', timeoutDuration: number): Action {
   const timeoutMinutes = timeoutDuration > 0 ? timeoutDuration : null;
 
   switch (severity) {

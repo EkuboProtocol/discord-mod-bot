@@ -55,7 +55,9 @@ const PriceHistoryResponse = Schema.Struct({
 const TokensResponse = Schema.Array(TokenRow);
 
 const VolumeOverviewResponse = Schema.Struct({
-  volumeByTokenByDate: Schema.Array(Schema.Struct({ ...VolumeRow.fields, fees: Schema.Union([Schema.String, Schema.Number]) })).pipe(Schema.withDecodingDefault(Effect.succeed([])))
+  volumeByTokenByDate: Schema.Array(
+    Schema.Struct({ ...VolumeRow.fields, fees: Schema.Union([Schema.String, Schema.Number]) })
+  ).pipe(Schema.withDecodingDefault(Effect.succeed([])))
 });
 
 // Use the protocol total rather than a partial sum of locally priced pool balances.
@@ -110,8 +112,7 @@ function fetchPrice(
 ): Effect.Effect<PriceInfo | null, ApiError> {
   const tokenUrl = `${apiBase}/tokens/${chainId}/${address}`;
   const historyUrl =
-    `${apiBase}/tokens/${chainId}/${address}/price-history` +
-    '?interval=900&duration=86400';
+    `${apiBase}/tokens/${chainId}/${address}/price-history` + '?interval=900&duration=86400';
 
   return Effect.gen(function* () {
     const [token, history] = yield* Effect.all(
@@ -188,9 +189,7 @@ export function sumDayVolumeUsd(
  * The feed always carries a bucket for the current day, which is partial and
  * would read as a sudden collapse in volume if we published it.
  */
-export function latestCompleteDay(
-  rows: ReadonlyArray<{ readonly date: string }>
-): string | null {
+export function latestCompleteDay(rows: ReadonlyArray<{ readonly date: string }>): string | null {
   const today = new Date().toISOString().slice(0, 10);
   const days = rows.map(row => row.date.slice(0, 10)).filter(day => day < today);
 
@@ -199,29 +198,39 @@ export function latestCompleteDay(
 
 /** A failed endpoint omits its stats without blocking the rest of the rotation. */
 function optionalStat<A>(effect: Effect.Effect<A, ApiError>): Effect.Effect<A | null> {
-  return effect.pipe(Effect.catch(error =>
-    Effect.logWarning(`Presence data unavailable: ${error.message}`).pipe(Effect.as(null))
-  ));
+  return effect.pipe(
+    Effect.catch(error =>
+      Effect.logWarning(`Presence data unavailable: ${error.message}`).pipe(Effect.as(null))
+    )
+  );
 }
 
-export const fetchStatuses = Effect.fn('fetchStatuses')(function* (
-  { apiBase, timeoutMs }: PresenceConfig
-) {
-  const [price, stonx, overview, tvl, tokens] = yield* Effect.all([
-    optionalStat(fetchPrice(apiBase, timeoutMs)),
-    optionalStat(fetchPrice(apiBase, timeoutMs, STONX_CHAIN_ID, STONX_ADDRESS)),
-    optionalStat(fetchJson(`${apiBase}/overview/volume`, VolumeOverviewResponse, timeoutMs)),
-    optionalStat(fetchJson(TVL_URL, Schema.Number, timeoutMs)),
-    optionalStat(fetchJson(`${apiBase}/tokens`, TokensResponse, timeoutMs))
-  ], { concurrency: 'unbounded' });
+export const fetchStatuses = Effect.fn('fetchStatuses')(function* ({
+  apiBase,
+  timeoutMs
+}: PresenceConfig) {
+  const [price, stonx, overview, tvl, tokens] = yield* Effect.all(
+    [
+      optionalStat(fetchPrice(apiBase, timeoutMs)),
+      optionalStat(fetchPrice(apiBase, timeoutMs, STONX_CHAIN_ID, STONX_ADDRESS)),
+      optionalStat(fetchJson(`${apiBase}/overview/volume`, VolumeOverviewResponse, timeoutMs)),
+      optionalStat(fetchJson(TVL_URL, Schema.Number, timeoutMs)),
+      optionalStat(fetchJson(`${apiBase}/tokens`, TokensResponse, timeoutMs))
+    ],
+    { concurrency: 'unbounded' }
+  );
   const priceMap = buildPriceMap(tokens ?? []);
   const rows = overview?.volumeByTokenByDate ?? [];
   const day = latestCompleteDay(rows);
   const canPriceDay = day !== null && tokens !== null;
   const volume = canPriceDay ? sumDayVolumeUsd(rows, priceMap, day) : null;
-  const fees = canPriceDay ? sumDayVolumeUsd(
-    rows.map(row => ({ ...row, volume: row.fees })), priceMap, day
-  ) : null;
+  const fees = canPriceDay
+    ? sumDayVolumeUsd(
+        rows.map(row => ({ ...row, volume: row.fees })),
+        priceMap,
+        day
+      )
+    : null;
   return formatStatuses(price, volume, tvl, fees, stonx);
 });
 
@@ -278,9 +287,11 @@ export function presenceLoop(client: Client, config: PresenceConfig): Effect.Eff
     let statuses: string[] = [];
     let index = 0;
     const refresh = fetchStatuses(config).pipe(
-      Effect.tap(next => Effect.sync(() => {
-        if (next.length > 0) statuses = next;
-      })),
+      Effect.tap(next =>
+        Effect.sync(() => {
+          if (next.length > 0) statuses = next;
+        })
+      ),
       Effect.catchCause(cause => Effect.logWarning('Presence refresh failed', cause)),
       Effect.repeat(Schedule.spaced(Duration.millis(config.intervalMs)))
     );
