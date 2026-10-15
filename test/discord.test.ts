@@ -4,12 +4,10 @@ import type { GuildMember, Message } from 'discord.js';
 import { deleteIfPresent, getRoleNames } from '../src/discord';
 import { DiscordError, isUnknownMessageError } from '../src/errors';
 
-/** A stand-in for a GuildMember carrying just the role shape the helper reads. */
 function memberWithRoles(...names: string[]): GuildMember {
   return { roles: { cache: names.map(name => ({ name })) } } as unknown as GuildMember;
 }
 
-/** Run an effect with logging silenced, so test output stays readable. */
 const Silent = Layer.succeed(References.MinimumLogLevel, 'None');
 
 function run<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
@@ -30,8 +28,6 @@ describe('getRoleNames', () => {
   });
 
   test('tolerates a null member', () => {
-    // The GuildMembers intent was dropped, so message.member is absent more
-    // often than it used to be — this path is live, not theoretical.
     expect(getRoleNames(null)).toEqual([]);
     expect(getRoleNames(undefined)).toEqual([]);
   });
@@ -76,8 +72,6 @@ describe('deleteIfPresent', () => {
   });
 
   test('absorbs the "already deleted" race and reports false', async () => {
-    // Another moderator or automod removing the message first is expected, not
-    // exceptional — it must not take down the surrounding handler.
     const message = {
       delete: async () => {
         throw { code: 10008 };
@@ -101,8 +95,6 @@ describe('deleteIfPresent', () => {
     const reason = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined;
     const error = reason && Cause.isFailReason(reason) ? reason.error : undefined;
 
-    // The original error survives inside the tagged wrapper, rather than being
-    // flattened into a message string.
     expect(error).toBeInstanceOf(DiscordError);
     expect((error as DiscordError).cause).toMatchObject({ code: 50013 });
     expect((error as DiscordError).message).toBe('ctx: [object Object]');

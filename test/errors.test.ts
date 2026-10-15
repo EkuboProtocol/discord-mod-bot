@@ -7,7 +7,6 @@ import {
   isUnknownMessageError
 } from '../src/errors';
 
-/** The cause a failed startup effect actually produces, not a hand-built one. */
 function causeOf<E>(error: E): Cause.Cause<E> {
   const exit = Effect.runSyncExit(Effect.fail(error));
   if (!Exit.isFailure(exit)) throw new Error('expected a failure');
@@ -16,7 +15,6 @@ function causeOf<E>(error: E): Cause.Cause<E> {
 
 describe('isDisallowedIntentsError', () => {
   test('recognises the gateway rejecting a privileged intent', () => {
-    // discord.js surfaces gateway close 4014 as this error code.
     expect(isDisallowedIntentsError({ code: 'DisallowedIntents' })).toBe(true);
   });
 
@@ -37,8 +35,6 @@ describe('isDisallowedIntentsError', () => {
 
 describe('explainStartupFailure', () => {
   test('a missing intent gets instructions, not a stack trace', () => {
-    // This is what the bot prints on every restart until Message Content is
-    // enabled in the Developer Portal, so it has to say exactly that.
     const cause = causeOf(
       new DiscordError({ op: 'log in to Discord', cause: { code: 'DisallowedIntents' } })
     );
@@ -51,7 +47,6 @@ describe('explainStartupFailure', () => {
   });
 
   test('a missing setting names both ways to supply it', async () => {
-    // Not DISCORD_TOKEN: test/setup.ts puts that in the environment.
     const exit = await Effect.runPromiseExit(Config.string('WELCOME_CHANNEL_ID'));
     const text = Exit.isFailure(exit) ? explainStartupFailure(exit.cause) : '';
 
@@ -71,7 +66,6 @@ describe('explainStartupFailure', () => {
   });
 
   test('an unrecognised failure falls through to the full cause', () => {
-    // A genuine bug should not be reduced to a friendly sentence.
     const cause = causeOf(new DiscordError({ op: 'log in to Discord', cause: 'boom' }));
 
     expect(explainStartupFailure(cause)).toContain('log in to Discord');

@@ -1,28 +1,13 @@
 import { Effect, Option, Schema } from 'effect';
 import type { AppConfigShape } from './config';
 
-/**
- * The moderation decision core: every rule about *what should happen* lives
- * here as a total function over plain data, with no Discord or OpenAI types in
- * sight. That is what makes the severity ladder testable — previously it was
- * reachable only through a live `messageCreate` event.
- */
-
 export const Severity = Schema.Literals(['high', 'medium', 'low']);
 export type Severity = typeof Severity.Type;
 
-/** A field the model may omit entirely; absent decodes to `null`. */
 const nullableText = Schema.NullOr(Schema.String).pipe(
   Schema.withDecodingDefault(Effect.succeed(null))
 );
 
-/**
- * The shape the model is asked to return.
- *
- * `severity` is a loose string rather than the `Severity` literal on purpose:
- * a model that invents a fourth severity should degrade to the mildest action,
- * not fail the whole decode and let the message stand.
- */
 export const ModerationVerdict = Schema.Struct({
   isSpamOrScam: Schema.Boolean,
   severity: nullableText,
@@ -32,20 +17,12 @@ export type ModerationVerdict = typeof ModerationVerdict.Type;
 
 export const DEFAULT_REASON = 'Detected as spam/scam by moderation system';
 
-/** The verdict used whenever the model call or its decode fails: take no action. */
 export const CLEAN: ModerationVerdict = {
   isSpamOrScam: false,
   severity: null,
   reason: null
 };
 
-/**
- * Normalise the model's severity string.
- *
- * Absent means `medium`, which is the historical default; an unrecognised value
- * is reported as `unknown` so the caller can pick the conservative action
- * rather than guessing which end of the ladder it belongs on.
- */
 export function severityOf(raw: string | null | undefined): Severity | 'unknown' {
   if (raw === null || raw === undefined || raw === '') {
     return 'medium';
@@ -53,14 +30,6 @@ export function severityOf(raw: string | null | undefined): Severity | 'unknown'
   return raw === 'high' || raw === 'medium' || raw === 'low' ? raw : 'unknown';
 }
 
-/**
- * What to do about a flagged message.
- *
- * `BanThenTimeout` carries its own fallback because a ban can fail for reasons
- * that have nothing to do with the message — a role hierarchy that puts the
- * author above the bot, most often — and silently doing nothing in that case
- * would be the worst outcome of the three.
- */
 export type Action =
   | { readonly _tag: 'BanThenTimeout'; readonly fallbackTimeoutMinutes: number | null }
   | { readonly _tag: 'Timeout'; readonly minutes: number }
@@ -77,13 +46,10 @@ export function actionFor(severity: Severity | 'unknown', timeoutDuration: numbe
         ? { _tag: 'DeleteOnly' }
         : { _tag: 'Timeout', minutes: timeoutMinutes };
     default:
-      // Low severity, and anything unrecognised: remove the message, leave the
-      // account alone.
       return { _tag: 'DeleteOnly' };
   }
 }
 
-/** What actually happened, after Discord had its say. */
 export type Outcome =
   | { readonly _tag: 'Banned' }
   | { readonly _tag: 'TimedOut'; readonly minutes: number }
@@ -97,11 +63,9 @@ export interface ChannelNoticeInput {
   readonly authorMention: string;
   readonly reason: string;
   readonly outcome: Outcome;
-  /** Users the offending message tagged, excluding its author. */
   readonly mentionedUserIds: ReadonlyArray<string>;
 }
 
-/** The short, self-deleting notice posted in the channel the message came from. */
 export function channelNotice(input: ChannelNoticeInput): string {
   const { authorMention, reason, outcome, mentionedUserIds } = input;
 
@@ -134,7 +98,6 @@ export function actionTakenText(outcome: Outcome): string {
   }
 }
 
-/** Discord rejects embed field values over 1024 characters. */
 export function truncateForEmbed(content: string): string {
   return content.length > 1024 ? `${content.substring(0, 1021)}...` : content;
 }
@@ -161,7 +124,6 @@ export interface ReportInput {
   readonly at: Date;
 }
 
-/** The detailed embed sent to the notification channel. */
 export function reportEmbed(input: ReportInput) {
   const { title, color } = embedHeading(input.outcome);
 
@@ -191,7 +153,6 @@ export function reportEmbed(input: ReportInput) {
   };
 }
 
-/** Everything the skip rules need to know about an incoming message. */
 export interface MessageFacts {
   readonly authorIsBot: boolean;
   readonly guildId: string | null;
@@ -213,12 +174,6 @@ type SkipConfig = Pick<
   'serverId' | 'moderatedChannels' | 'excludedChannels' | 'excludedRoles' | 'ignoredPhrases'
 >;
 
-/**
- * Why this message should not reach the model, or `null` to analyse it.
- *
- * Returning a reason rather than a boolean is what lets the caller log *which*
- * rule fired without duplicating the rules at the log site.
- */
 export function skipReason(facts: MessageFacts, config: SkipConfig): SkipReason | null {
   if (facts.authorIsBot) return 'bot-author';
   if (facts.guildId === null || facts.guildId !== config.serverId) return 'other-guild';
@@ -236,7 +191,6 @@ export function skipReason(facts: MessageFacts, config: SkipConfig): SkipReason 
   return null;
 }
 
-/** A moderation button embedded in a report: `action:userId:guildId`. */
 export const MODERATION_ACTIONS = ['ban', 'unban', 'delete'] as const;
 export type ModerationAction = (typeof MODERATION_ACTIONS)[number];
 
@@ -246,14 +200,6 @@ export interface ButtonTarget {
   readonly guildId: string;
 }
 
-/**
- * Parse a button's custom ID, or `null` if it is not one of ours.
- *
- * The old code checked the prefix, split, and then indexed into the parts,
- * leaving `userId` and `guildId` typed as `string | undefined` and passed
- * straight to `guild.members.ban`. Validating once, here, is what makes the
- * three handlers below able to take plain `string`s.
- */
 export function parseButtonTarget(customId: string): ButtonTarget | null {
   const [action, userId, guildId, ...rest] = customId.split(':');
 

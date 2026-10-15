@@ -15,25 +15,15 @@ export interface MessageMeta {
   readonly roles: ReadonlyArray<string>;
 }
 
-/** Roles as the prompt shows them; a member with none is stated, not omitted. */
 export function formatRolesForDisplay(roles: ReadonlyArray<string> | undefined | null): string {
   return roles && roles.length > 0 ? roles.join(', ') : 'None';
 }
 
-/**
- * Whether the model belongs to the families that take `max_completion_tokens`
- * and a `developer` system role.
- */
 export function isModernReasoningModel(model: string): boolean {
   const normalizedModel = model.toLowerCase();
   return normalizedModel.startsWith('gpt-5') || /^o\d/.test(normalizedModel);
 }
 
-/**
- * Getting this wrong is not a soft failure: OpenAI rejects `max_tokens` for the
- * reasoning models and `max_completion_tokens` for the older ones, so the whole
- * moderation call errors out and the bot falls back to "not spam".
- */
 export function getTokenLimitParam(
   model: string,
   tokenLimit: number
@@ -90,13 +80,6 @@ export interface CheckInput {
   readonly meta: MessageMeta | null;
 }
 
-/**
- * The exact request body sent to OpenAI, built without touching the network.
- *
- * Pulling this out of the request is what lets a test assert that context
- * ordering, the role name and the token-limit parameter are right, none of
- * which used to be observable without an API key.
- */
 export function buildRequest(
   model: string,
   input: CheckInput
@@ -141,14 +124,6 @@ export function buildRequest(
 
 const decodeVerdict = Schema.decodeUnknownEffect(ModerationVerdict);
 
-/**
- * The moderation model, as a service.
- *
- * `check` cannot fail. That is a deliberate promise encoded in its type: an
- * OpenAI outage, a malformed completion, or a timeout must all read as "not
- * spam", because the alternative — an error path that reaches the action code —
- * would have the bot banning people because a third party was down.
- */
 export class Moderator extends Context.Service<
   Moderator,
   {
@@ -168,17 +143,12 @@ export class Moderator extends Context.Service<
   ).pipe(Layer.provide(AppConfig.layer));
 }
 
-/** Shared request/decode path, with distinct startup and live-message failure policies. */
 export function createModerator(client: OpenAI, model: string): Moderator['Service'] {
   const requestVerdict = Effect.fn('Moderator.requestVerdict')(function* (input: CheckInput) {
     const response = yield* Effect.tryPromise({
       try: signal => client.chat.completions.create(buildRequest(model, input), { signal }),
       catch: cause => new OpenAiError({ cause })
-    }).pipe(
-      // The original had no bound here, so a stalled request pinned the
-      // message handler open indefinitely.
-      Effect.timeout(Duration.seconds(30))
-    );
+    }).pipe(Effect.timeout(Duration.seconds(30)));
 
     const choice = response.choices[0];
     if (!choice || choice.finish_reason !== 'stop' || !choice.message.content) {

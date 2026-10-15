@@ -9,23 +9,10 @@ import { explainStartupFailure } from './errors';
 import { loginDiscord, validateDiscordPermissions } from './discord-startup';
 import { LoggerLive } from './logging';
 
-/**
- * The bot's services: configuration, the winston-backed logger, and the
- * moderation model. Everything else in the program is a plain function of
- * these, which is what lets the whole app be exercised with a substituted
- * layer rather than a substituted global.
- */
 const AppLayer = Layer.mergeAll(AppConfig.layer, Moderator.layer).pipe(
   Layer.provideMerge(LoggerLive.pipe(Layer.provide(AppConfig.layer)))
 );
 
-/**
- * The gateway connection, tied to the program's scope.
- *
- * Shutting down disposes the runtime below, which runs this release step, so
- * SIGTERM closes the websocket rather than dropping it — without a
- * `client.destroy()` duplicated into each signal handler.
- */
 const gatewayClient = Effect.acquireRelease(
   Effect.sync(
     () =>
@@ -41,11 +28,6 @@ const gatewayClient = Effect.acquireRelease(
   client => Effect.promise(() => client.destroy())
 );
 
-/**
- * `ManagedRuntime` is the bridge to discord.js's callback API: it builds the
- * layer once and hands every event handler a way to run an Effect with the
- * services already in scope.
- */
 const runtime = ManagedRuntime.make(AppLayer);
 
 const program = Effect.gen(function* () {
@@ -72,7 +54,6 @@ const program = Effect.gen(function* () {
   yield* setupBot(client, runtime);
   yield* Effect.logInfo('Discord bot startup checks passed; moderation is active');
 
-  // The bot is event-driven from here; hold the scope open until interrupted.
   yield* Effect.never;
 });
 
@@ -87,7 +68,6 @@ fiber.addObserver(exit => {
   void runtime.dispose().finally(() => process.exit(0));
 });
 
-/** Disposing the runtime runs the release step that closes the gateway. */
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     console.error(`Received ${signal}, shutting down...`);
@@ -95,8 +75,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-// Anything that escapes a fiber is logged and survived, not fatal: a single bad
-// event must not take moderation offline for the whole server.
 process.on('uncaughtException', (error: Error) => {
   console.error('Uncaught Exception:', error);
 });
