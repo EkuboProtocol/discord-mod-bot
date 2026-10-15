@@ -55,7 +55,6 @@ export function requiredChannelPermissions(
     required.add(channel.thread ? 'SendMessagesInThreads' : 'SendMessages');
     if (config.contextMessageCount > 0) required.add('ReadMessageHistory');
   }
-  // The report's purge button scans every regular text channel, even exclusions.
   if (Option.isSome(config.notificationChannelId) && channel.type === ChannelType.GuildText) {
     for (const name of ['ViewChannel', 'ReadMessageHistory', 'ManageMessages'] as const) {
       required.add(name);
@@ -110,7 +109,6 @@ function configuredChannelIssues(guild: Guild, config: PermissionConfig): string
   return issues;
 }
 
-/** Read-only validation: never send/delete messages or alter roles to probe access. */
 export const validateDiscordPermissions = Effect.fn('validateDiscordPermissions')(
   function* (client: Client, config: AppConfigShape) {
     const guild = yield* Effect.tryPromise({
@@ -122,7 +120,6 @@ export const validateDiscordPermissions = Effect.fn('validateDiscordPermissions'
         await guild.roles.fetch();
         await guild.channels.fetch();
         await guild.channels.fetchActiveThreads();
-        // Explicitly selected archived threads are absent from the guild channel list.
         const ids = [
           ...Option.getOrElse(config.moderatedChannels, () => []),
           ...Option.toArray(config.notificationChannelId)
@@ -150,7 +147,6 @@ export const validateDiscordPermissions = Effect.fn('validateDiscordPermissions'
         cause: new Error(issues.join('\n'))
       });
     }
-    // Permission bits cannot override member hierarchy or owner/administrator immunity.
     const higher = guild.roles.cache.filter(
       role =>
         role.id !== guild.id &&
@@ -170,7 +166,6 @@ export const validateDiscordPermissions = Effect.fn('validateDiscordPermissions'
   Effect.mapError(cause => new DiscordError({ op: 'validate Discord startup permissions', cause }))
 );
 
-/** Wait for clientReady before inspecting permissions or installing moderation handlers. */
 export function loginDiscord(client: Client, token: AppConfigShape['token']) {
   return Effect.callback<void, DiscordError>(resume => {
     const cleanup = () => {

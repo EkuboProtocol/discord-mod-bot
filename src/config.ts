@@ -11,14 +11,6 @@ import {
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 
-// Bun loads .env automatically, so there is no dotenv call here.
-
-/**
- * Every setting is named once, by its environment variable, and the CLI flag is
- * just another way to write it. Keeping the two in one table is what lets the
- * whole precedence rule (CLI > env > default) be a single `ConfigProvider`
- * composition below instead of one ternary chain per setting.
- */
 const FLAGS = {
   DISCORD_TOKEN: { flag: 'token', alias: 't', description: 'Discord bot token' },
   DISCORD_SERVER_ID: { flag: 'server', alias: 's', description: 'Discord server ID' },
@@ -72,20 +64,11 @@ const FLAGS = {
 
 type EnvName = keyof typeof FLAGS;
 
-/** The `--flag` a user would pass to set a given environment variable. */
 export function flagFor(envName: string): string | null {
   const entry = (FLAGS as Record<string, { flag: string } | undefined>)[envName];
   return entry ? `--${entry.flag}` : null;
 }
 
-/**
- * Read argv into a `name -> value` record keyed by environment variable.
- *
- * No yargs `default:` values are declared, deliberately. A default here would
- * make the flag *always* present and so would shadow the environment variable
- * it is supposed to merely override; defaults belong on the `Config` values
- * below, which sit underneath both sources.
- */
 export function parseCli(argv: ReadonlyArray<string>): Record<string, string> {
   let parser = yargs(hideBin(argv as string[]))
     .help()
@@ -112,7 +95,6 @@ export function parseCli(argv: ReadonlyArray<string>): Record<string, string> {
   return result;
 }
 
-/** Split a comma-separated setting, trimming blanks the way a human writes them. */
 export function splitList(raw: string): string[] {
   return raw
     .split(',')
@@ -120,13 +102,6 @@ export function splitList(raw: string): string[] {
     .filter(item => item.length > 0);
 }
 
-/**
- * Accept the lowercase level names the README and the deployed App Platform
- * spec use, not just Effect's own capitalised spelling.
- *
- * `Config.logLevel` would reject `LOG_LEVEL=debug` outright, which would turn a
- * routine redeploy of the existing configuration into a startup failure.
- */
 export function parseLogLevel(raw: string): LogLevel.LogLevel {
   const normalized = raw.trim().toLowerCase();
   const match = LOG_LEVELS.find(level => level.toLowerCase() === normalized);
@@ -149,10 +124,6 @@ export interface PresenceConfig {
   readonly timeoutMs: number;
 }
 
-/**
- * Rich presence: protocol stats published as the bot's Discord status. Every
- * field defaults, so the feature needs no new deployment config.
- */
 const presenceConfig: Config.Config<PresenceConfig> = Config.all({
   enabled: Config.boolean('PRESENCE_ENABLED').pipe(Config.withDefault(true)),
   apiBase: Config.string('EKUBO_API_BASE').pipe(Config.withDefault('https://prod-api.ekubo.org')),
@@ -161,13 +132,6 @@ const presenceConfig: Config.Config<PresenceConfig> = Config.all({
   timeoutMs: Config.int('PRESENCE_TIMEOUT_MS').pipe(Config.withDefault(10_000))
 });
 
-/**
- * Channels excluded from moderation, with the welcome channel folded in.
- *
- * The welcome channel is its own setting only because it is the one exclusion
- * most servers want and would otherwise have to look up an ID for; downstream
- * there is no reason to distinguish it from any other exclusion.
- */
 const excludedChannels = Config.all({
   explicit: listOf('EXCLUDED_CHANNELS').pipe(Config.withDefault<ReadonlyArray<string>>([])),
   welcome: Config.string('WELCOME_CHANNEL_ID').pipe(Config.option)
@@ -184,7 +148,6 @@ const appConfig = Config.all({
   token: Config.redacted('DISCORD_TOKEN'),
   serverId: Config.string('DISCORD_SERVER_ID'),
 
-  // `None` means "every channel", which is not the same as an empty allow-list.
   moderatedChannels: listOf('MODERATED_CHANNELS').pipe(Config.option),
   excludedChannels,
   excludedRoles: listOf('EXCLUDED_ROLES').pipe(Config.withDefault<ReadonlyArray<string>>([])),
@@ -224,12 +187,6 @@ export interface AppConfigShape {
   readonly presence: PresenceConfig;
 }
 
-/**
- * CLI arguments on top of the environment. `orElse` only falls through when the
- * first provider has no value for a path, so a flag that was not passed defers
- * to `.env`, and a setting absent from both lands on the `withDefault` baked
- * into each `Config`.
- */
 export function makeConfigProvider(
   argv: ReadonlyArray<string> = process.argv
 ): ConfigProvider.ConfigProvider {
@@ -239,14 +196,6 @@ export function makeConfigProvider(
   );
 }
 
-/**
- * The resolved configuration, as a service.
- *
- * Unlike the module-level object it replaces, nothing is validated at import
- * time: a missing token is a typed `ConfigError` in the startup effect, which
- * is why importing `src/ai.ts` in a unit test no longer requires a fake
- * `DISCORD_TOKEN` to be in scope first.
- */
 export class AppConfig extends Context.Service<AppConfig, AppConfigShape>()(
   'discord-mod-bot/AppConfig'
 ) {

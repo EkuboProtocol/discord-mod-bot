@@ -3,7 +3,6 @@ import { ActivityType, type Client } from 'discord.js';
 import type { PresenceConfig } from './config';
 import { ApiError } from './errors';
 
-/** Token prices are chain-specific; volume, TVL and fees cover all chains. */
 const CHAIN_ID = 1;
 const EKUBO_ADDRESS = '0x04c46e830bb56ce22735d5d8fc9cb90309317d0f';
 const STONX_CHAIN_ID = 4663;
@@ -19,13 +18,6 @@ interface PriceEntry {
   readonly decimals: number;
 }
 
-/**
- * The API's own encoding, taken at face value only after decoding.
- *
- * `chain_id` is a union because the feeds disagree about whether chain IDs are
- * numbers or strings; both are normalised to a `BigInt` in the key below, so
- * the union stops here rather than leaking into the aggregation.
- */
 const ChainId = Schema.Union([Schema.Number, Schema.String]);
 
 const TokenRow = Schema.Struct({
@@ -60,16 +52,8 @@ const VolumeOverviewResponse = Schema.Struct({
   ).pipe(Schema.withDecodingDefault(Effect.succeed([])))
 });
 
-// Use the protocol total rather than a partial sum of locally priced pool balances.
 const TVL_URL = 'https://api.llama.fi/tvl/ekubo';
 
-/**
- * Fetch and decode JSON, failing fast rather than hanging the presence tick.
- *
- * Decoding rather than casting is the point: a field the API renames turns into
- * a logged `ApiError` and the previous status stays up, instead of `undefined`
- * quietly propagating into the status line as `$NaN`.
- */
 function fetchJson<A, I>(
   url: string,
   schema: Schema.Codec<A, I>,
@@ -97,13 +81,6 @@ function fetchJson<A, I>(
   );
 }
 
-/**
- * Current token price and its movement over the trailing 24 hours.
- *
- * The live price comes from the token endpoint and the baseline from the oldest
- * bucket of the 24h history, so the percentage is genuinely "vs 24h ago" rather
- * than "vs the start of whichever bucket we happened to land in".
- */
 function fetchPrice(
   apiBase: string,
   timeoutMs: number,
@@ -135,13 +112,6 @@ function fetchPrice(
   });
 }
 
-/**
- * Build a `${chainId}:${tokenAddress}` -> {usdPrice, decimals} lookup.
- *
- * Addresses are keyed by their numeric value because the volume feed abbreviates
- * native ETH as "0x0" while the token list spells out the zero address; a plain
- * string compare would silently drop the single largest row.
- */
 export function buildPriceMap(tokens: ReadonlyArray<TokenRow>): Map<string, PriceEntry> {
   const map = new Map<string, PriceEntry>();
 
@@ -158,10 +128,6 @@ export function buildPriceMap(tokens: ReadonlyArray<TokenRow>): Map<string, Pric
   return map;
 }
 
-/**
- * Sum one day's rows into a USD total, skipping tokens with no known price.
- * `day` is `YYYY-MM-DD`.
- */
 export function sumDayVolumeUsd(
   rows: ReadonlyArray<VolumeRow>,
   priceMap: ReadonlyMap<string, PriceEntry>,
@@ -183,12 +149,6 @@ export function sumDayVolumeUsd(
   return total;
 }
 
-/**
- * The most recent day that is actually over, in UTC.
- *
- * The feed always carries a bucket for the current day, which is partial and
- * would read as a sudden collapse in volume if we published it.
- */
 export function latestCompleteDay(rows: ReadonlyArray<{ readonly date: string }>): string | null {
   const today = new Date().toISOString().slice(0, 10);
   const days = rows.map(row => row.date.slice(0, 10)).filter(day => day < today);
@@ -196,7 +156,6 @@ export function latestCompleteDay(rows: ReadonlyArray<{ readonly date: string }>
   return days.length > 0 ? (days.sort().at(-1) ?? null) : null;
 }
 
-/** A failed endpoint omits its stats without blocking the rest of the rotation. */
 function optionalStat<A>(effect: Effect.Effect<A, ApiError>): Effect.Effect<A | null> {
   return effect.pipe(
     Effect.catch(error =>
@@ -234,7 +193,6 @@ export const fetchStatuses = Effect.fn('fetchStatuses')(function* ({
   return formatStatuses(price, volume, tvl, fees, stonx);
 });
 
-/** Compact USD, e.g. `$25.7M`. */
 export function formatUsdCompact(value: number): string {
   if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
   if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
@@ -242,7 +200,6 @@ export function formatUsdCompact(value: number): string {
   return `$${value.toFixed(0)}`;
 }
 
-/** Signed movement, e.g. `▲2.5%`. */
 export function formatChange(changePct: number | null): string {
   if (changePct === null || !Number.isFinite(changePct)) {
     return '';
@@ -252,7 +209,6 @@ export function formatChange(changePct: number | null): string {
   return ` ${arrow}${Math.abs(changePct).toFixed(1)}%`;
 }
 
-/** One short stat per status so the value stays visible on narrow screens. */
 export function formatStatuses(
   price: PriceInfo | null,
   volume: number | null,
@@ -279,7 +235,6 @@ function formatMetric(label: string, value: number | null): string {
   return value !== null && Number.isFinite(value) ? `${label} ${formatUsdCompact(value)}` : '';
 }
 
-/** Independent scoped loops keep rotation smooth even while API requests are slow. */
 export function presenceLoop(client: Client, config: PresenceConfig): Effect.Effect<void> {
   if (!config.enabled) return Effect.logInfo('Presence updates disabled');
 

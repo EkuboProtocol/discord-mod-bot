@@ -35,8 +35,6 @@ describe('ModerationVerdict', () => {
   });
 
   test('rejects a verdict with no verdict in it', () => {
-    // A decode failure is what makes the caller fall back to "not spam", so
-    // this must fail rather than coerce.
     expect(decode({ severity: 'high' })._tag).toBe('Failure');
     expect(decode({ isSpamOrScam: 'yes' })._tag).toBe('Failure');
     expect(decode('nope')._tag).toBe('Failure');
@@ -80,8 +78,6 @@ describe('actionFor', () => {
   });
 
   test('TIMEOUT_DURATION=0 downgrades a medium result to a plain delete', () => {
-    // The README documents 0 as "disable timeouts", so it must not become a
-    // zero-minute timeout call.
     expect(actionFor('medium', 0)).toEqual({ _tag: 'DeleteOnly' });
   });
 
@@ -90,8 +86,6 @@ describe('actionFor', () => {
   });
 
   test('an unrecognised severity takes the mildest action, not the harshest', () => {
-    // A model that invents a severity must not be able to talk the bot into a
-    // ban it did not ask for.
     expect(actionFor('unknown', 5)).toEqual({ _tag: 'DeleteOnly' });
   });
 });
@@ -171,7 +165,6 @@ describe('reportEmbed', () => {
   });
 
   test("keeps message content inside Discord's 1024-character field limit", () => {
-    // Over the limit the whole embed is rejected and the audit trail is lost.
     const long = 'x'.repeat(5000);
 
     expect(truncateForEmbed(long)).toHaveLength(1024);
@@ -211,7 +204,6 @@ describe('skipReason', () => {
   });
 
   test('an empty allow-list is not the same as no allow-list', () => {
-    // `None` means every channel; `Some([])` means none of them.
     const allowNothing = { ...config, moderatedChannels: Option.some<ReadonlyArray<string>>([]) };
 
     expect(skipReason(facts, allowNothing)).toBe('channel-not-moderated');
@@ -238,7 +230,6 @@ describe('skipReason', () => {
 
   test('ignored phrases are matched case- and whitespace-insensitively', () => {
     expect(skipReason({ ...facts, content: '  GM  ' }, config)).toBe('ignored-phrase');
-    // Only the whole message, not a substring of it.
     expect(skipReason({ ...facts, content: 'gm everyone' }, config)).toBeNull();
   });
 });
@@ -262,7 +253,6 @@ describe('parseButtonTarget', () => {
   });
 
   test('rejects truncated or overlong IDs rather than passing undefined onward', () => {
-    // The old code split and indexed, handing `undefined` to guild.members.ban.
     expect(parseButtonTarget('ban:123')).toBeNull();
     expect(parseButtonTarget('ban::456')).toBeNull();
     expect(parseButtonTarget('ban:123:456:789')).toBeNull();

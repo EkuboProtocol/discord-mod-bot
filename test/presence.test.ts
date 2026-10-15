@@ -10,9 +10,6 @@ import {
 
 describe('buildPriceMap', () => {
   test('keys addresses by numeric value, so "0x0" and the padded zero address collide', () => {
-    // This is the whole reason the key is built with BigInt. The volume feed
-    // abbreviates native ETH as "0x0" while the token list spells the zero
-    // address out in full; a string compare would drop the largest row.
     const map = buildPriceMap([
       {
         chain_id: 1,
@@ -57,8 +54,8 @@ describe('sumDayVolumeUsd', () => {
 
   test('scales each row by its own decimals before pricing it', () => {
     const rows = [
-      { date: '2026-08-29', chain_id: 1, token: '0x1', volume: '1000000000000000000' }, // 1.0 @ $2
-      { date: '2026-08-29', chain_id: 1, token: '0x2', volume: '5000000' } //             5.0 @ $1
+      { date: '2026-08-29', chain_id: 1, token: '0x1', volume: '1000000000000000000' },
+      { date: '2026-08-29', chain_id: 1, token: '0x2', volume: '5000000' }
     ];
 
     expect(sumDayVolumeUsd(rows, priceMap, '2026-08-29')).toBe(7);
@@ -99,7 +96,6 @@ describe('latestCompleteDay', () => {
   const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
 
   test('excludes the current UTC day, whose bucket is still partial', () => {
-    // Publishing the running day would read as a sudden collapse in volume.
     const rows = [{ date: twoDaysAgo }, { date: yesterday }, { date: today }];
 
     expect(latestCompleteDay(rows)).toBe(yesterday);

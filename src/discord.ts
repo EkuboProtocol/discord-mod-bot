@@ -30,30 +30,19 @@ import {
 } from './moderation';
 import { presenceLoop } from './presence';
 
-/** How long the in-channel notice stays up before it is cleaned away. */
 const NOTICE_LIFETIME = Duration.seconds(10);
 
-/** Discord refuses to bulk-delete anything older than 14 days. */
 const BULK_DELETE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
-/**
- * Wrap a discord.js promise, tagging it with the operation for the log line.
- *
- * Every REST call in this file goes through here, so a failure is always a
- * typed `DiscordError` in the error channel rather than a rejection that some
- * enclosing `try` may or may not have been placed to catch.
- */
 function discord<A>(op: string, thunk: () => Promise<A>): Effect.Effect<A, DiscordError> {
   return Effect.tryPromise({ try: thunk, catch: cause => new DiscordError({ op, cause }) });
 }
 
-/** Channel name for logging; DMs and other channel kinds have no name. */
 function channelName(message: Message): string {
   const channel = message.channel as { name?: string };
   return channel.name ?? message.channel.id;
 }
 
-/** Return a list of user-friendly role names for a guild member. */
 export function getRoleNames(member: GuildMember | null | undefined): string[] {
   if (!member || !member.roles) {
     return [];
@@ -70,12 +59,6 @@ function getRoleIds(member: GuildMember | null | undefined): string[] {
   return member.roles.cache.map(role => role.id);
 }
 
-/**
- * Delete a message, treating "it is already gone" as success-adjacent.
- *
- * Returns whether this call is the one that removed it; any other failure stays
- * in the error channel for the caller to decide about.
- */
 export function deleteIfPresent(
   message: Message,
   context: string
@@ -89,15 +72,10 @@ export function deleteIfPresent(
   );
 }
 
-/** A channel we can post moderation notices into. */
 function asSendable(channel: unknown): GuildTextBasedChannel | null {
   const candidate = channel as GuildTextBasedChannel | null;
   return candidate && candidate.isTextBased?.() && !candidate.isDMBased?.() ? candidate : null;
 }
-
-// ---------------------------------------------------------------------------
-// Moderation actions
-// ---------------------------------------------------------------------------
 
 function timeoutMember(
   member: GuildMember,
@@ -112,14 +90,6 @@ function timeoutMember(
   );
 }
 
-/**
- * Carry out the action the severity called for, reporting what actually landed.
- *
- * This never fails: a ban the bot lacks the role hierarchy to perform, or a
- * timeout on a member who has since left, still leaves the message deleted and
- * still has to be reported accurately, so each failure degrades one rung rather
- * than aborting the handler.
- */
 export function applyAction(
   message: Message<true>,
   action: Action,
@@ -169,16 +139,6 @@ export function applyAction(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Notifications
-// ---------------------------------------------------------------------------
-
-/**
- * Post the short in-channel notice and schedule its own removal.
- *
- * The cleanup is a *daemon* fiber: it outlives this handler by design, so it
- * must not be interrupted when the handler's scope closes ten seconds early.
- */
 function postChannelNotice(message: Message<true>, outcome: Outcome, reason: string) {
   return Effect.gen(function* () {
     const channel = asSendable(message.channel);
@@ -228,7 +188,6 @@ function moderationButtons(target: Omit<ButtonTarget, 'action'>, banned: boolean
   );
 }
 
-/** Send the detailed report, with its moderator buttons, to the audit channel. */
 function postReport(
   client: Client,
   channelId: string,
@@ -269,11 +228,6 @@ function postReport(
   });
 }
 
-// ---------------------------------------------------------------------------
-// messageCreate
-// ---------------------------------------------------------------------------
-
-/** The preceding messages sent to the model as conversational context. */
 function fetchContext(
   message: Message<true>,
   count: number
@@ -319,15 +273,12 @@ const handleMessage = (client: Client, message: Message) =>
     );
 
     if (skip !== null) {
-      // `other-guild` and `bot-author` fire on essentially every event in a
-      // busy server, so they stay below the debug line the operator reads.
       if (skip !== 'bot-author' && skip !== 'other-guild') {
         yield* Effect.logDebug(`Skipping message from ${message.author.tag}: ${skip}`);
       }
       return;
     }
 
-    // `skipReason` established the guild, which is what `Message<true>` means.
     const guildMessage = message as Message<true>;
 
     yield* Effect.logDebug(
@@ -377,16 +328,6 @@ const handleMessage = (client: Client, message: Message) =>
     Effect.withLogSpan('messageCreate')
   );
 
-// ---------------------------------------------------------------------------
-// interactionCreate
-// ---------------------------------------------------------------------------
-
-/**
- * Append a field to the report embed and swap in the buttons that now apply.
- *
- * The report is the audit trail, so it is edited in place rather than replied
- * to: a moderator scrolling back sees the final state, not a thread of updates.
- */
 function updateReport(
   interaction: ButtonInteraction,
   field: { name: string; value: string },
@@ -459,7 +400,6 @@ function unbanUser(
   );
 }
 
-/** Recent messages from one author in one channel, within the bulk-delete window. */
 function purgeChannel(channel: TextChannel, userId: string): Effect.Effect<number> {
   return discord(`purge #${channel.name}`, () => channel.messages.fetch({ limit: 100 })).pipe(
     Effect.map(messages =>
@@ -474,7 +414,6 @@ function purgeChannel(channel: TextChannel, userId: string): Effect.Effect<numbe
             Effect.as(mine.size)
           )
     ),
-    // One channel the bot cannot read must not abort the sweep of the others.
     Effect.catch(error =>
       Effect.logWarning(`Failed to delete messages in channel ${channel.name}`, error).pipe(
         Effect.as(0)
@@ -559,10 +498,6 @@ const handleInteraction = (client: Client, interaction: Interaction) =>
     Effect.withLogSpan('interactionCreate')
   );
 
-// ---------------------------------------------------------------------------
-// Startup
-// ---------------------------------------------------------------------------
-
 export function describeSetup(client: Client, config: AppConfigShape) {
   return Effect.gen(function* () {
     yield* Effect.logInfo(`Logged in as ${client.user?.tag}`);
@@ -602,14 +537,6 @@ export function describeSetup(client: Client, config: AppConfigShape) {
   });
 }
 
-/**
- * Attach the bot's event handlers to a client.
- *
- * discord.js is callback-driven, so this is the one adapter between its world
- * and Effect's: each event forks its handler on the application runtime, which
- * is what gives every handler the config, the moderator and the logger without
- * any of them being a module-level singleton.
- */
 export const setupBot = (
   client: Client,
   runtime: ManagedRuntime.ManagedRuntime<AppConfig | Moderator, Config.ConfigError>

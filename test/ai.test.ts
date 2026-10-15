@@ -7,15 +7,12 @@ import {
   SYSTEM_PROMPT
 } from '../src/ai';
 
-// Getting this wrong is not a soft failure: OpenAI rejects `max_tokens` for the
-// reasoning models and `max_completion_tokens` for the older ones, so the whole
-// moderation call errors out and checkMessage falls back to "not spam".
 describe('isModernReasoningModel', () => {
   test.each([
     'gpt-5',
     'gpt-5-mini',
-    'gpt-5.4-mini', // the model the deployed bot actually runs
-    'GPT-5-MINI', // the check is case-insensitive
+    'gpt-5.4-mini',
+    'GPT-5-MINI',
     'o1',
     'o1-preview',
     'o3-mini',
@@ -32,7 +29,6 @@ describe('isModernReasoningModel', () => {
   );
 
   test('does not mistake a plain "o"-prefixed name for the o-series', () => {
-    // The pattern requires a digit right after the "o".
     expect(isModernReasoningModel('omni-moderation-latest')).toBe(false);
   });
 });
@@ -124,8 +120,6 @@ describe('buildRequest', () => {
 
     expect(request.messages).toHaveLength(3);
     expect(request.messages[1]?.content).toContain('[alice | Roles: Mod]: hi');
-    // A member with no roles is stated as "None", never left blank, so the
-    // model cannot read the line as a truncated one.
     expect(request.messages[1]?.content).toContain('[bob | Roles: None]: hey');
   });
 });

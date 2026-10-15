@@ -2,12 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { Config, ConfigProvider, Effect, Option } from 'effect';
 import { flagFor, parseLogLevel, splitList } from '../src/config';
 
-/**
- * The precedence rule — CLI flag beats environment variable beats default — is
- * the part of configuration that used to be a hand-written ternary per setting,
- * and the part most likely to be wrong without anyone noticing. Here it is a
- * single provider composition, tested directly.
- */
 function resolve<A>(
   config: Config.Config<A>,
   cli: Record<string, string>,
@@ -35,9 +29,6 @@ describe('configuration precedence', () => {
   });
 
   test('an unset flag does not shadow the environment variable', async () => {
-    // This is the bug the old yargs `default:` values caused: LOG_LEVEL and
-    // CONTEXT_MESSAGE_COUNT could never take effect, because the flag was
-    // always present with its default and won the `||` chain.
     const logLevel = Config.string('LOG_LEVEL').pipe(Config.withDefault('info'));
 
     expect(await resolve(logLevel, {}, { LOG_LEVEL: 'debug' })).toBe('debug');
@@ -48,8 +39,6 @@ describe('configuration precedence', () => {
   });
 
   test('a numeric setting of 0 is honoured, not treated as absent', async () => {
-    // TIMEOUT_DURATION=0 means "disable timeouts"; a `||` chain would silently
-    // read it as 5.
     const timeout = Config.int('TIMEOUT_DURATION').pipe(Config.withDefault(5));
 
     expect(await resolve(timeout, {}, { TIMEOUT_DURATION: '0' })).toBe(0);
@@ -65,9 +54,6 @@ describe('configuration precedence', () => {
   });
 
   test('a blank value counts as absent, not as an empty allow-list', async () => {
-    // The README tells App Platform users to "leave blank to use defaults", and
-    // an empty MODERATED_CHANNELS that decoded to `Some([])` would moderate
-    // nothing at all — the opposite of the documented default.
     const channels = Config.string('MODERATED_CHANNELS').pipe(Config.map(splitList), Config.option);
 
     expect(await resolve(channels, {}, { MODERATED_CHANNELS: '' })).toEqual(Option.none());
@@ -88,7 +74,6 @@ describe('splitList', () => {
 
 describe('flagFor', () => {
   test('names the flag that sets a given environment variable', () => {
-    // Used to turn a missing-config error into an actionable startup message.
     expect(flagFor('DISCORD_TOKEN')).toBe('--token');
     expect(flagFor('NOTIFICATION_CHANNEL_ID')).toBe('--notification-channel');
   });
@@ -100,8 +85,6 @@ describe('flagFor', () => {
 
 describe('parseLogLevel', () => {
   test('accepts the lowercase names the README and the live deploy spec use', () => {
-    // Effect 4 spells its levels "Info"/"Warn". Rejecting "info" would turn a
-    // redeploy of the existing LOG_LEVEL into a startup failure.
     expect(parseLogLevel('debug')).toBe('Debug');
     expect(parseLogLevel('info')).toBe('Info');
     expect(parseLogLevel('warn')).toBe('Warn');
