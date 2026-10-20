@@ -20,8 +20,10 @@ workers:
       - key: DISCORD_SERVER_ID
         type: SECRET
         scope: RUN_TIME
-      - key: OPENAI_API_KEY
+      - key: CLOUDFLARE_API_TOKEN
         type: SECRET
+        scope: RUN_TIME
+      - key: CLOUDFLARE_ACCOUNT_ID
         scope: RUN_TIME
       - key: WELCOME_CHANNEL_ID
         scope: RUN_TIME
@@ -30,9 +32,6 @@ workers:
       - key: EXCLUDED_ROLES
         scope: RUN_TIME
       - key: TIMEOUT_DURATION
-        scope: RUN_TIME
-      - key: OPENAI_MODEL
-        value: gpt-4o-mini
         scope: RUN_TIME
       - key: IGNORED_PHRASES
         value: gm

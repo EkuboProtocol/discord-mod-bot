@@ -16,16 +16,16 @@ function resolve<A>(
 }
 
 describe('configuration precedence', () => {
-  const model = Config.string('OPENAI_MODEL').pipe(Config.withDefault('gpt-3.5-turbo'));
+  const contextCount = Config.int('CONTEXT_MESSAGE_COUNT').pipe(Config.withDefault(5));
 
   test('a flag overrides the environment', async () => {
-    expect(await resolve(model, { OPENAI_MODEL: 'gpt-5' }, { OPENAI_MODEL: 'gpt-4o' })).toBe(
-      'gpt-5'
-    );
+    expect(
+      await resolve(contextCount, { CONTEXT_MESSAGE_COUNT: '3' }, { CONTEXT_MESSAGE_COUNT: '10' })
+    ).toBe(3);
   });
 
   test('the environment is used when no flag was passed', async () => {
-    expect(await resolve(model, {}, { OPENAI_MODEL: 'gpt-4o' })).toBe('gpt-4o');
+    expect(await resolve(contextCount, {}, { CONTEXT_MESSAGE_COUNT: '10' })).toBe(10);
   });
 
   test('an unset flag does not shadow the environment variable', async () => {
@@ -35,7 +35,7 @@ describe('configuration precedence', () => {
   });
 
   test('the default applies when neither source has it', async () => {
-    expect(await resolve(model, {}, {})).toBe('gpt-3.5-turbo');
+    expect(await resolve(contextCount, {}, {})).toBe(5);
   });
 
   test('a numeric setting of 0 is honoured, not treated as absent', async () => {
@@ -76,6 +76,7 @@ describe('flagFor', () => {
   test('names the flag that sets a given environment variable', () => {
     expect(flagFor('DISCORD_TOKEN')).toBe('--token');
     expect(flagFor('NOTIFICATION_CHANNEL_ID')).toBe('--notification-channel');
+    expect(flagFor('CLOUDFLARE_API_TOKEN')).toBe('--cloudflare-api-token');
   });
 
   test('is null for settings that have no flag', () => {

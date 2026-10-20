@@ -22,10 +22,10 @@ import {
   channelNotice,
   parseButtonTarget,
   reportEmbed,
-  severityOf,
   skipReason,
   type Action,
   type ButtonTarget,
+  type ModerationVerdict,
   type Outcome
 } from './moderation';
 import { presenceLoop } from './presence';
@@ -193,8 +193,7 @@ function postReport(
   channelId: string,
   message: Message<true>,
   outcome: Outcome,
-  severity: ReturnType<typeof severityOf>,
-  reason: string
+  verdict: Extract<ModerationVerdict, { _tag: 'Flagged' }>
 ) {
   return Effect.gen(function* () {
     const channel = asSendable(client.channels.cache.get(channelId));
@@ -209,8 +208,7 @@ function postReport(
             authorId: message.author.id,
             authorTag: message.author.tag,
             channelId: message.channel.id,
-            severity,
-            reason,
+            verdict,
             content: message.content,
             outcome,
             at: new Date()
@@ -292,12 +290,11 @@ const handleMessage = (client: Client, message: Message) =>
       meta: { author: message.author.tag, roles: getRoleNames(message.member) }
     });
 
-    if (!verdict.isSpamOrScam) {
+    if (verdict._tag === 'Clean') {
       return;
     }
 
-    const severity = severityOf(verdict.severity);
-    const reason = verdict.reason ?? 'Detected as spam/scam by moderation system';
+    const { severity, reason } = verdict;
 
     yield* Effect.logInfo(
       `Detected ${severity} spam/scam from ${message.author.tag} in ` +
@@ -319,7 +316,7 @@ const handleMessage = (client: Client, message: Message) =>
 
     yield* Option.match(config.notificationChannelId, {
       onNone: () => Effect.void,
-      onSome: channelId => postReport(client, channelId, guildMessage, outcome, severity, reason)
+      onSome: channelId => postReport(client, channelId, guildMessage, outcome, verdict)
     });
   }).pipe(
     Effect.catchCause(cause =>
@@ -522,7 +519,7 @@ export function describeSetup(client: Client, config: AppConfigShape) {
     );
     yield* Effect.logInfo(`Excluded channels: ${config.excludedChannels.join(', ') || 'None'}`);
     yield* Effect.logInfo(`Excluded roles: ${config.excludedRoles.join(', ') || 'None'}`);
-    yield* Effect.logInfo(`Using OpenAI model: ${config.openaiModel}`);
+    yield* Effect.logInfo('Using Workers AI models: @cf/cloudflare/clef, @cf/cloudflare/clairic');
     yield* Effect.logInfo(`Using ${config.contextMessageCount} previous messages for context`);
 
     yield* Option.match(config.notificationChannelId, {
