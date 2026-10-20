@@ -5,7 +5,7 @@ A Bun + TypeScript bot for Discord that uses AI to automatically moderate messag
 ## Features
 
 - Automatically monitors Discord channels for spam and scam messages
-- Uses OpenAI's GPT models to intelligently detect problematic content
+- Scores every message with Cloudflare Workers AI's Clef model and extracts typed evidence (links, invites, handles, promised amounts) from flagged messages with Clairic
 - Considers previous channel messages for context when moderating
 - Can be configured to monitor specific channels or the entire server
 - Allows excluding users with specific roles from moderation
@@ -18,7 +18,7 @@ A Bun + TypeScript bot for Discord that uses AI to automatically moderate messag
 
 - [Bun](https://bun.sh) 1.2 or higher
 - Discord Bot Token (with appropriate permissions)
-- OpenAI API Key
+- Cloudflare account ID and an API token allowed to run Workers AI models
 - Ubuntu server (for systemd service setup)
 
 ## Installation
@@ -47,8 +47,8 @@ A Bun + TypeScript bot for Discord that uses AI to automatically moderate messag
    ```
    DISCORD_TOKEN=your_discord_bot_token
    DISCORD_SERVER_ID=your_server_id
-   OPENAI_API_KEY=your_openai_api_key
-   OPENAI_MODEL=gpt-3.5-turbo
+   CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id
+   CLOUDFLARE_API_TOKEN=your_workers_ai_token
    # Add more configuration as needed
    ```
 
@@ -74,13 +74,13 @@ bun test
 
 ### Startup validation
 
-Before connecting to Discord, the bot sends one synthetic moderation request to
-OpenAI using the configured API key, model, and normal request parameters. Startup
-requires a complete response that decodes as a moderation verdict within 30 seconds.
-An API error, timeout, refusal, truncated output, or invalid verdict fails startup
-with exit code 1 and an error naming the configured model. This check never posts a
-Discord message or takes a moderation action. It incurs one normal API request per
-startup. Errors processing real messages still fail open.
+Before connecting to Discord, the bot asks Clef about one benign synthetic message
+using the configured account and token and the normal request. Startup requires a
+response that decodes within 30 seconds and scores the message as clean
+(`p(spam) < 0.5`). An API error, timeout, `success: false`, a response that does not
+decode, or a benign message scored as spam fails startup with exit code 1. This
+check never posts a Discord message or takes a moderation action. It incurs one
+normal API request per startup. Errors processing real messages still fail open.
 
 After Discord emits `clientReady`, startup fetches the server's roles, channels,
 active threads, and the bot member to check effective permissions (including channel
@@ -110,20 +110,22 @@ Options:
                              moderation                             [string]
   -w, --welcome-channel      Channel ID of the welcome channel to exclude from
                              moderation                             [string]
-  -m, --openai-model         OpenAI model to use                    [string]
   -n, --notification-channel Channel ID to send notifications to    [string]
   --context-messages         Number of previous messages for context
                                                      [string] [default: "5"]
   -l, --log-level            Log level (error, warn, info, debug)
                                                     [string] [default: "info"]
-  -k, --openai-api-key       OpenAI API key                        [string]
+  --cloudflare-account-id    Cloudflare account ID that runs the Workers AI
+                             moderation models                      [string]
+  --cloudflare-api-token     Cloudflare API token allowed to run Workers AI
+                             models                                 [string]
   -h, --help                 Show help                             [boolean]
 ```
 
 Example:
 
 ```bash
-bun run src/index.ts --token=your_token --server=your_server_id --channels=channel1,channel2 --excluded-roles=role1,role2 --openai-model=gpt-4
+bun run src/index.ts --token=your_token --server=your_server_id --channels=channel1,channel2 --excluded-roles=role1,role2
 ```
 
 ### Setting Up as a Systemd Service
@@ -174,7 +176,7 @@ The repository includes a ready-to-use App Platform spec at `.do/app.yaml` that 
 > `doctl apps spec get <APP_ID>` — it round-trips the encrypted secret values,
 > whereas applying this file as-is would clear them.
 
-4. After the app is created, add the required environment variables (Discord token, server ID, OpenAI key, etc.) under **Settings → Environment Variables** or by updating the spec and running:
+4. After the app is created, add the required environment variables (Discord token, server ID, Cloudflare account ID and token, etc.) under **Settings → Environment Variables** or by updating the spec and running:
    ```bash
    doctl apps update <APP_ID> --spec .do/app.yaml
    ```
@@ -185,14 +187,14 @@ The spec lists the variables the worker expects:
 
 - `DISCORD_TOKEN` _(secret)_ – Discord bot token
 - `DISCORD_SERVER_ID` – ID of the Discord server to moderate
-- `OPENAI_API_KEY` _(secret)_ – OpenAI API key
-- `OPENAI_MODEL` – Model to use (defaults to `gpt-3.5-turbo`)
+- `CLOUDFLARE_ACCOUNT_ID` – Cloudflare account that runs the Workers AI models
+- `CLOUDFLARE_API_TOKEN` _(secret)_ – Cloudflare API token allowed to run Workers AI models
 - `LOG_LEVEL` – Logging verbosity (`error`, `warn`, `info`, `debug`)
 - `CONTEXT_MESSAGE_COUNT` – Number of prior messages to send for context
 - `TIMEOUT_DURATION` – Timeout duration in minutes (set `0` to disable)
 - `MODERATED_CHANNELS`, `EXCLUDED_CHANNELS`, `EXCLUDED_ROLES`, `WELCOME_CHANNEL_ID`, `NOTIFICATION_CHANNEL_ID`, `IGNORED_PHRASES` – Optional fine-tuning values; leave blank to use defaults
 
-Remember to keep secret values (Discord/OpenAI tokens) stored as **Secret** scope variables in App Platform so they are not committed to the repository.
+Remember to keep secret values (Discord and Cloudflare tokens) stored as **Secret** scope variables in App Platform so they are not committed to the repository.
 
 ## Configuration
 
@@ -211,9 +213,9 @@ If a required setting is missing, the bot names it at startup along with both wa
 - `WELCOME_CHANNEL_ID`: Channel ID of the welcome channel to exclude from moderation (automated messages)
 - `EXCLUDED_ROLES`: Comma-separated list of role IDs to exclude from moderation
 - `TIMEOUT_DURATION`: Duration in minutes to timeout users when their message is deleted (default: 5, set to 0 to disable)
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `OPENAI_MODEL`: Model to use for AI moderation (default: gpt-3.5-turbo)
-- `IGNORED_PHRASES`: Comma-separated list of phrases to ignore (won't be sent to OpenAI)
+- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account that runs the Workers AI models
+- `CLOUDFLARE_API_TOKEN`: Cloudflare API token allowed to run Workers AI models
+- `IGNORED_PHRASES`: Comma-separated list of phrases to ignore (never sent to the moderation model)
 - `NOTIFICATION_CHANNEL_ID`: Channel ID to send detailed moderation notifications
 - `CONTEXT_MESSAGE_COUNT`: Number of previous messages to include for context (default: 5)
 - `LOG_LEVEL`: Logging level (error, warn, info, debug)
@@ -225,9 +227,39 @@ Logs are stored in the `logs` directory:
 - `logs/combined.log`: Contains all log messages
 - `logs/error.log`: Contains only error messages
 
+## How a message is judged
+
+Each moderated message, with the previous `CONTEXT_MESSAGE_COUNT` messages for
+context, goes to [Clef](https://developers.cloudflare.com/workers-ai/models/clef/)
+with two questions: the probability that it is spam or a scam, and its severity
+(`high`, `medium`, `low` or `none`). The thresholds are constants in
+`src/moderation.ts`, changed by a release:
+
+- `p(spam) < 0.8`: no action.
+- `high` with `p(high) ≥ 0.6`: ban (timeout if the ban fails). `high` below that
+  degrades to `medium`.
+- `medium`: delete and time out for `TIMEOUT_DURATION`.
+- `low`, or `none` despite `p(spam) ≥ 0.8`: delete only.
+
+Only a message that will be acted on is sent to
+[Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/), which
+extracts typed evidence: Discord invites, links, off-platform handles, promised
+amounts, profit cuts, impersonated parties and requests to DM. A field is used
+only when Clairic returns a value and its confidence clears a floor; invites and
+links are also found by deterministic checks that undo common obfuscation.
+
+The reason is a template, e.g. `High-severity spam/scam (p=0.97): promises
+$5,000; asks for 20% of profits; directs to Telegram`. The public notice never
+repeats a link, invite code or handle; the moderator report shows the typed
+evidence and the model's scores.
+
+If Workers AI fails, times out, or returns something that does not decode, the
+message is treated as clean. If Clairic alone fails, the action still happens,
+with less evidence.
+
 ## Moderation Rules
 
-The bot monitors messages for:
+The severity criteria cover:
 
 1. Messages containing suspicious links or asking users to open tickets
 2. Messages asking users to DM for support instead of using public channels
@@ -272,7 +304,7 @@ If you already have a bot for your server, you could integrate this moderation c
 
 - **Bot not starting**: Check the logs for error messages
 - **Bot not detecting messages**: Make sure the bot has the required permissions in Discord
-- **OpenAI API errors**: Verify your API key and quota
+- **Workers AI errors**: Verify the account ID and that the token can run Workers AI models
 - **Bot not running after system restart**: Make sure the systemd service is enabled
 - **Context not being considered**: Ensure the bot has permissions to read message history
 

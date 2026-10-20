@@ -38,10 +38,13 @@ are `Effect.catch`/`Effect.catchCause`; `zipRight` is `andThen`; `forkDaemon` is
 (`Success`/`Failure`); `LogLevel` is a plain string union (`'Info'`, `'Warn'`).
 
 - `src/moderation.ts` — the decision core. Severity → action, the skip rules,
-  the notice and embed text, button-ID parsing. No Discord or OpenAI types, no
-  I/O, fully covered by tests.
-- `src/ai.ts` — the `Moderator` service. `buildRequest` is pure and tested;
-  `check` wraps the OpenAI call and **cannot fail** (see Fail-open below).
+  the notice and embed text, button-ID parsing, and the Clef thresholds,
+  Clairic evidence gating and templated reason. No Discord or Workers AI types,
+  no I/O, fully covered by tests.
+- `src/ai.ts` — the `Moderator` service. Request construction and response
+  decoding are pure and tested; `check` wraps the Workers AI calls (Clef for the
+  verdict, Clairic for evidence on flagged messages only) and **cannot fail**
+  (see Fail-open below).
 - `src/discord.ts` — event handlers as Effects, plus `setupBot`, the single
   adapter between discord.js's callbacks and the Effect runtime. Each event
   calls `runtime.runFork`, where `runtime` is the `ManagedRuntime` built in
@@ -57,7 +60,9 @@ are `Effect.catch`/`Effect.catchCause`; `zipRight` is `andThen`; `forkDaemon` is
 ### Fail-open is a load-bearing invariant
 
 `Moderator.check` is typed `Effect<ModerationVerdict>` — no error channel. An
-OpenAI outage, a timeout, or a malformed completion must all read as "not spam".
+Workers AI outage, a timeout, `success: false`, or a response that does not
+decode must all read as "not spam". A Clairic failure only loses evidence; the
+Clef verdict still stands.
 Do not "improve" this by letting the error escape: the failure mode is the bot
 banning people because a third party was down. `applyAction` degrades the same
 way, one rung at a time (ban → timeout → delete only), because a ban the bot
@@ -94,7 +99,7 @@ variable it is only supposed to override. Defaults belong on the `Config` value.
 
 - `bun test` (built into Bun, no test framework dependency). Tests live in `test/`.
 - Coverage is the decision core and the pure helpers: everything in
-  `src/moderation.ts`, request construction and model-family detection in
+  `src/moderation.ts`, request construction, response decoding and the fail-open paths in
   `src/ai.ts`, the presence formatters and aggregation, configuration
   precedence, and the Discord helpers.
 - `test/setup.ts` still supplies placeholder credentials, but nothing depends on

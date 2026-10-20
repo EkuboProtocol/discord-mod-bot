@@ -1,60 +1,221 @@
 import { describe, expect, test } from 'bun:test';
-import { Option, Schema } from 'effect';
+import { Option } from 'effect';
 import {
   actionFor,
   actionTakenText,
+  BAN_THRESHOLD,
   channelNotice,
+  codeSpan,
+  decide,
+  deobfuscate,
   embedHeading,
-  ModerationVerdict,
+  evidenceLines,
+  findContactPlatform,
+  findInvites,
+  findLinks,
+  flaggedVerdict,
+  gated,
+  gateEvidence,
+  NO_EVIDENCE,
   parseButtonTarget,
   reportEmbed,
-  severityOf,
   skipReason,
+  SPAM_THRESHOLD,
+  templateReason,
   truncateForEmbed,
-  type Outcome
+  type ClefScores,
+  type Evidence,
+  type Outcome,
+  type SeverityChoice
 } from '../src/moderation';
 
-const decode = Schema.decodeUnknownResult(ModerationVerdict);
+function scores(pSpam: number, choice: SeverityChoice, pHigh = 0.9): ClefScores {
+  const rest = (1 - pHigh) / 3;
+  return { pSpam, choice, probabilities: { high: pHigh, medium: rest, low: rest, none: rest } };
+}
 
-describe('ModerationVerdict', () => {
-  test('fills in the nulls the model is allowed to omit', () => {
-    const result = decode({ isSpamOrScam: false });
-
-    expect(result._tag).toBe('Success');
-    expect(result._tag === 'Success' && result.success).toEqual({
-      isSpamOrScam: false,
-      severity: null,
-      reason: null
-    });
+describe('decide', () => {
+  test('the measured constants', () => {
+    expect(SPAM_THRESHOLD).toBe(0.8);
+    expect(BAN_THRESHOLD).toBe(0.6);
   });
 
-  test('accepts a full verdict', () => {
-    const result = decode({ isSpamOrScam: true, severity: 'high', reason: 'phishing link' });
-
-    expect(result._tag === 'Success' && result.success.severity).toBe('high');
+  test('below the spam threshold nothing happens, whatever the severity says', () => {
+    expect(decide(scores(0.79, 'high', 0.99))).toEqual({ _tag: 'Clean' });
+    expect(decide(scores(0, 'none'))).toEqual({ _tag: 'Clean' });
   });
 
-  test('rejects a verdict with no verdict in it', () => {
-    expect(decode({ severity: 'high' })._tag).toBe('Failure');
-    expect(decode({ isSpamOrScam: 'yes' })._tag).toBe('Failure');
-    expect(decode('nope')._tag).toBe('Failure');
+  test('a probability that is not a number is not spam', () => {
+    expect(decide(scores(Number.NaN, 'high'))).toEqual({ _tag: 'Clean' });
+  });
+
+  test('at the threshold a confident high bans', () => {
+    expect(decide(scores(0.8, 'high', 0.6))).toEqual({ _tag: 'Act', severity: 'high' });
+  });
+
+  test('a high choice without p(high) >= 0.6 degrades to a timeout', () => {
+    expect(decide(scores(0.99, 'high', 0.59))).toEqual({ _tag: 'Act', severity: 'medium' });
+  });
+
+  test.each(['medium', 'low'] as const)('%s maps straight through', choice => {
+    expect(decide(scores(0.95, choice, 0.1))).toEqual({ _tag: 'Act', severity: choice });
+  });
+
+  test('none while p(spam) is above the threshold takes the mildest action', () => {
+    expect(decide(scores(0.9, 'none', 0.1))).toEqual({ _tag: 'Act', severity: 'low' });
   });
 });
 
-describe('severityOf', () => {
-  test.each(['high', 'medium', 'low'] as const)('passes %p through', raw => {
-    expect(severityOf(raw)).toBe(raw);
+describe('gated', () => {
+  test('uses a value that clears the confidence floor', () => {
+    expect(gated({ value: 5000, confidence: 0.9 }, 0.8)).toBe(5000);
   });
 
-  test('treats an absent severity as medium, the historical default', () => {
-    expect(severityOf(null)).toBe('medium');
-    expect(severityOf(undefined)).toBe('medium');
-    expect(severityOf('')).toBe('medium');
+  test('drops a low-confidence value', () => {
+    expect(gated({ value: 5000, confidence: 0.7 }, 0.8)).toBeNull();
+    expect(gated({ value: 5000 }, 0.8)).toBeNull();
   });
 
-  test('reports a severity it does not recognise rather than guessing', () => {
-    expect(severityOf('critical')).toBe('unknown');
-    expect(severityOf('HIGH')).toBe('unknown');
+  test('a null value (p_null above threshold) is never used', () => {
+    expect(gated({ value: null, confidence: 1 }, 0.8)).toBeNull();
+    expect(gated(undefined, 0.8)).toBeNull();
+  });
+});
+
+describe('deterministic checks', () => {
+  const mangled =
+    '**Please continue here** :point_down: \n> **><ht\n> tp\n> \n> ://di\n> sco\n> ' +
+    'rdapp\u3002\n> com\\invite\\QEBEfsrMx>>** <@442409344458555402>';
+
+  test('rejoins a link broken across quoted lines', () => {
+    expect(deobfuscate(mangled)).toContain('<http://discordapp.com/invite/QEBEfsrMx>');
+  });
+
+  test('finds invites, plain or obfuscated', () => {
+    expect(findInvites(mangled)).toEqual(['QEBEfsrMx']);
+    expect(findInvites('join discord.gg/abc123 now')).toEqual(['abc123']);
+    expect(findInvites('no invite here')).toEqual([]);
+  });
+
+  test('finds links but leaves invites to the invite check', () => {
+    expect(findLinks('see <h\ntt\nps://\nt.co/UDq1HgHSBA>')).toEqual(['https://t.co/UDq1HgHSBA']);
+    expect(findLinks(mangled)).toEqual([]);
+  });
+
+  test('names the off-platform app a message points to', () => {
+    expect(findContactPlatform('ask me via Telegram username')).toBe('Telegram');
+    expect(findContactPlatform('message me on whatsapp')).toBe('WhatsApp');
+    expect(findContactPlatform('how do I swap')).toBeNull();
+  });
+});
+
+describe('gateEvidence', () => {
+  test('keeps confident numbers and drops unsure phrases', () => {
+    const evidence = gateEvidence(
+      {
+        promised_amount_usd: { value: 60000, confidence: 0.91 },
+        cut_percent: { value: 10, confidence: 1 },
+        asks_for_dm: { value: 'Panel', confidence: 0.09 },
+        impersonated_party: { value: 'the te_am', confidence: 0.8 }
+      },
+      'text'
+    );
+
+    expect(evidence).toMatchObject({
+      promisedAmountUsd: 60000,
+      cutPercent: 10,
+      asksForDm: null,
+      impersonatedParty: 'the te_am'
+    });
+  });
+
+  test('a Discord mention is not an off-platform handle', () => {
+    const evidence = gateEvidence(
+      { off_platform_handle: { value: '@182530156563398658', confidence: 0.63 } },
+      'text'
+    );
+
+    expect(evidence.offPlatformHandle).toBeNull();
+  });
+
+  test('the regex finds the invite even when Clairic is unsure of it', () => {
+    const evidence = gateEvidence(
+      { discord_invite: { value: 'abc123', confidence: 0.3 } },
+      'go to discord.gg/abc123'
+    );
+
+    expect(evidence.discordInvites).toEqual(['abc123']);
+  });
+
+  test('ignores the near-zero confidence Clairic gives link lists', () => {
+    const evidence = gateEvidence(
+      { external_links: { value: ['Telegram', 'The'], confidence: 0.03 } },
+      'text'
+    );
+
+    expect(evidence.externalLinks).toEqual([]);
+  });
+
+  test('nothing extracted is nothing reported', () => {
+    expect(gateEvidence({}, 'plain text')).toEqual(NO_EVIDENCE);
+  });
+});
+
+const fullEvidence: Evidence = {
+  discordInvites: ['QEBEfsrMx'],
+  externalLinks: ['https://evil.example/claim'],
+  offPlatformHandle: '@scammer',
+  contactPlatform: 'Telegram',
+  promisedAmountUsd: 5000,
+  cutPercent: 20,
+  impersonatedParty: 'Ekubo Support',
+  asksForDm: 'send me a DM'
+};
+
+describe('templateReason', () => {
+  test('severity and probability alone when there is no evidence', () => {
+    expect(templateReason('medium', 0.874, NO_EVIDENCE)).toBe('Medium-severity spam/scam (p=0.87)');
+  });
+
+  test('lists the evidence in a fixed order', () => {
+    expect(templateReason('high', 0.97, fullEvidence)).toBe(
+      'High-severity spam/scam (p=0.97): promises $5,000; asks for 20% of profits; ' +
+        'links to another Discord server; links to an external site; directs to Telegram; ' +
+        'asks users to reach out privately'
+    );
+  });
+
+  test('describes an unnamed contact without repeating it', () => {
+    const reason = templateReason('high', 0.9, {
+      ...NO_EVIDENCE,
+      offPlatformHandle: '@scammer'
+    });
+
+    expect(reason).toEndWith('directs to an off-platform contact');
+  });
+
+  test('never echoes a URL, invite code, handle or quoted phrase', () => {
+    const reason = templateReason('high', 0.97, fullEvidence);
+
+    for (const secret of ['QEBEfsrMx', 'evil.example', '@scammer', 'Ekubo Support', 'DM']) {
+      expect(reason).not.toContain(secret);
+    }
+  });
+});
+
+describe('evidenceLines', () => {
+  test('shows typed values verbatim, in code', () => {
+    expect(evidenceLines(fullEvidence)).toContain('discord_invite: `QEBEfsrMx`');
+    expect(evidenceLines(fullEvidence)).toContain('promised_amount_usd: `5000`');
+  });
+
+  test('omits what was not found', () => {
+    expect(evidenceLines(NO_EVIDENCE)).toEqual([]);
+  });
+
+  test('a hostile value cannot break out of its code span', () => {
+    expect(codeSpan('a`b\n@everyone')).toBe("`a'b @everyone`");
+    expect(codeSpan('x'.repeat(500))).toHaveLength(202);
   });
 });
 
@@ -83,10 +244,6 @@ describe('actionFor', () => {
 
   test('low severity never punishes the account', () => {
     expect(actionFor('low', 5)).toEqual({ _tag: 'DeleteOnly' });
-  });
-
-  test('an unrecognised severity takes the mildest action, not the harshest', () => {
-    expect(actionFor('unknown', 5)).toEqual({ _tag: 'DeleteOnly' });
   });
 });
 
@@ -130,12 +287,13 @@ describe('channelNotice', () => {
 
 describe('reportEmbed', () => {
   const at = new Date('2026-09-01T12:00:00.000Z');
+  const verdict = flaggedVerdict('high', scores(0.97, 'high', 0.91), fullEvidence);
+  if (verdict._tag !== 'Flagged') throw new Error('expected a flagged verdict');
   const input = {
     authorId: '1',
     authorTag: 'spammer#0',
     channelId: '2',
-    severity: 'high' as const,
-    reason: 'phishing',
+    verdict,
     content: 'click here',
     at
   };
@@ -162,6 +320,17 @@ describe('reportEmbed', () => {
     expect(byName.Channel).toBe('<#2> (2)');
     expect(byName.Severity).toBe('High');
     expect(byName.Timestamp).toBe('2026-09-01T12:00:00.000Z');
+    expect(byName.Reason).toStartWith('High-severity spam/scam (p=0.97)');
+    expect(byName.Scores).toContain('p(spam) 0.970');
+    expect(byName.Evidence).toContain('off_platform_handle: `@scammer`');
+  });
+
+  test('leaves out the evidence field when there is none', () => {
+    const bare = flaggedVerdict('low', scores(0.85, 'low', 0.1), NO_EVIDENCE);
+    if (bare._tag !== 'Flagged') throw new Error('expected a flagged verdict');
+    const embed = reportEmbed({ ...input, verdict: bare, outcome: { _tag: 'DeletedOnly' } });
+
+    expect(embed.fields.map(f => f.name)).not.toContain('Evidence');
   });
 
   test("keeps message content inside Discord's 1024-character field limit", () => {

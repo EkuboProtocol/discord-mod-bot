@@ -39,8 +39,14 @@ const FLAGS = {
     alias: 'l',
     description: 'Log level (Error, Warn, Info, Debug)'
   },
-  OPENAI_API_KEY: { flag: 'openai-api-key', alias: 'k', description: 'OpenAI API key' },
-  OPENAI_MODEL: { flag: 'openai-model', alias: 'm', description: 'OpenAI model to use' },
+  CLOUDFLARE_ACCOUNT_ID: {
+    flag: 'cloudflare-account-id',
+    description: 'Cloudflare account ID that runs the Workers AI moderation models'
+  },
+  CLOUDFLARE_API_TOKEN: {
+    flag: 'cloudflare-api-token',
+    description: 'Cloudflare API token allowed to run Workers AI models'
+  },
   NOTIFICATION_CHANNEL_ID: {
     flag: 'notification-channel',
     alias: 'n',
@@ -53,7 +59,7 @@ const FLAGS = {
   IGNORED_PHRASES: {
     flag: 'ignored-phrases',
     alias: 'i',
-    description: "Comma-separated list of phrases to ignore (won't be sent to OpenAI)"
+    description: 'Comma-separated list of phrases to ignore (never sent to the moderation model)'
   },
   TIMEOUT_DURATION: {
     flag: 'timeout-duration',
@@ -154,8 +160,8 @@ const appConfig = Config.all({
 
   timeoutDuration: Config.int('TIMEOUT_DURATION').pipe(Config.withDefault(5)),
 
-  openaiApiKey: Config.redacted('OPENAI_API_KEY'),
-  openaiModel: Config.string('OPENAI_MODEL').pipe(Config.withDefault('gpt-3.5-turbo')),
+  cloudflareAccountId: Config.string('CLOUDFLARE_ACCOUNT_ID'),
+  cloudflareApiToken: Config.redacted('CLOUDFLARE_API_TOKEN'),
 
   notificationChannelId: Config.string('NOTIFICATION_CHANNEL_ID').pipe(Config.option),
 
@@ -178,8 +184,8 @@ export interface AppConfigShape {
   readonly excludedChannels: ReadonlyArray<string>;
   readonly excludedRoles: ReadonlyArray<string>;
   readonly timeoutDuration: number;
-  readonly openaiApiKey: Redacted.Redacted<string>;
-  readonly openaiModel: string;
+  readonly cloudflareAccountId: string;
+  readonly cloudflareApiToken: Redacted.Redacted<string>;
   readonly notificationChannelId: Option.Option<string>;
   readonly ignoredPhrases: ReadonlyArray<string>;
   readonly contextMessageCount: number;

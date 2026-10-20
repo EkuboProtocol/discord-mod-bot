@@ -43,9 +43,9 @@ const program = Effect.gen(function* () {
   );
 
   const moderator = yield* Moderator;
-  yield* Effect.logInfo(`Checking OpenAI configuration for model ${config.openaiModel}`);
+  yield* Effect.logInfo('Checking Workers AI moderation model @cf/cloudflare/clef');
   yield* moderator.startupCheck;
-  yield* Effect.logInfo(`OpenAI startup check passed for model ${config.openaiModel}`);
+  yield* Effect.logInfo('Workers AI startup check passed');
 
   const client = yield* gatewayClient;
   yield* loginDiscord(client, config.token);

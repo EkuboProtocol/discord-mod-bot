@@ -14,11 +14,12 @@ export class DiscordError extends Schema.TaggedError<DiscordError>()('DiscordErr
   }
 }
 
-export class OpenAiError extends Schema.TaggedError<OpenAiError>()('OpenAiError', {
+export class WorkersAiError extends Schema.TaggedError<WorkersAiError>()('WorkersAiError', {
+  model: Schema.String,
   cause: Schema.Defect()
 }) {
   override get message(): string {
-    return `OpenAI request failed: ${describeCause(this.cause)}`;
+    return `Workers AI ${this.model} request failed: ${describeCause(this.cause)}`;
   }
 }
 

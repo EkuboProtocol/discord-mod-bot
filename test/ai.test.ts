@@ -1,52 +1,19 @@
 import { describe, expect, test } from 'bun:test';
+import { Effect, Exit } from 'effect';
 import {
-  buildRequest,
+  buildState,
+  clairicRequest,
+  clefRequest,
+  decodeClairic,
+  decodeClef,
+  FIELDS,
   formatRolesForDisplay,
-  getTokenLimitParam,
-  isModernReasoningModel,
-  SYSTEM_PROMPT
+  modelUrl,
+  PREAMBLE,
+  QUESTIONS,
+  toScores
 } from '../src/ai';
-
-describe('isModernReasoningModel', () => {
-  test.each([
-    'gpt-5',
-    'gpt-5-mini',
-    'gpt-5.4-mini',
-    'GPT-5-MINI',
-    'o1',
-    'o1-preview',
-    'o3-mini',
-    'o4'
-  ])('treats %p as a reasoning model', model => {
-    expect(isModernReasoningModel(model)).toBe(true);
-  });
-
-  test.each(['gpt-4o-mini', 'gpt-4', 'gpt-3.5-turbo', 'gpt-4o'])(
-    'treats %p as a classic model',
-    model => {
-      expect(isModernReasoningModel(model)).toBe(false);
-    }
-  );
-
-  test('does not mistake a plain "o"-prefixed name for the o-series', () => {
-    expect(isModernReasoningModel('omni-moderation-latest')).toBe(false);
-  });
-});
-
-describe('getTokenLimitParam', () => {
-  test('reasoning models get max_completion_tokens', () => {
-    expect(getTokenLimitParam('gpt-5.4-mini', 200)).toEqual({ max_completion_tokens: 200 });
-  });
-
-  test('classic models get max_tokens', () => {
-    expect(getTokenLimitParam('gpt-4o-mini', 200)).toEqual({ max_tokens: 200 });
-  });
-
-  test('emits exactly one key, never both', () => {
-    expect(Object.keys(getTokenLimitParam('gpt-5', 200))).toHaveLength(1);
-    expect(Object.keys(getTokenLimitParam('gpt-4', 200))).toHaveLength(1);
-  });
-});
+import { clairicBody, clefBody } from './fixtures';
 
 describe('formatRolesForDisplay', () => {
   test('states that a member has no roles rather than leaving it blank', () => {
@@ -60,57 +27,25 @@ describe('formatRolesForDisplay', () => {
   });
 });
 
-describe('buildRequest', () => {
+describe('buildState', () => {
   const input = {
     content: 'click here',
     previousMessages: [],
     meta: { author: 'spammer#0', roles: ['Member'] }
   };
 
-  test.each(['gpt-5-mini', 'gpt-5.6-luna', 'o3-mini'])(
-    'uses reasoning-compatible parameters for %s',
-    model => {
-      const request = buildRequest(model, input);
-
-      expect(request.messages[0]).toEqual({ role: 'developer', content: SYSTEM_PROMPT });
-      expect(request).toMatchObject({ max_completion_tokens: 200 });
-      expect(request).not.toHaveProperty('temperature');
-    }
-  );
-
-  test('uses the system role and the plain token limit for classic models', () => {
-    const request = buildRequest('gpt-4o-mini', input);
-
-    expect(request.messages[0]?.role).toBe('system');
-    expect(request).toMatchObject({ max_tokens: 200 });
-    expect(request).toHaveProperty('temperature', 0.1);
-  });
-
-  test('always asks for JSON, since the reply is parsed as a verdict', () => {
-    expect(buildRequest('gpt-4o-mini', input).response_format).toEqual({ type: 'json_object' });
-  });
-
-  test('labels the message under analysis with its author and roles', () => {
-    const request = buildRequest('gpt-4o-mini', input);
-
-    expect(request.messages.at(-1)).toEqual({
-      role: 'user',
-      content: 'Author: spammer#0\nRoles: Member\nMessage: click here'
-    });
+  test('opens with the measured preamble and ends with the message under analysis', () => {
+    expect(buildState(input)).toBe(
+      `${PREAMBLE}\n\nAuthor: spammer#0\nRoles: Member\nMessage: click here`
+    );
   });
 
   test('sends the bare message when nothing is known about the author', () => {
-    const request = buildRequest('gpt-4o-mini', { ...input, meta: null });
-
-    expect(request.messages.at(-1)).toEqual({ role: 'user', content: 'click here' });
+    expect(buildState({ ...input, meta: null })).toBe(`${PREAMBLE}\n\nMessage: click here`);
   });
 
-  test('omits the context turn entirely when there is no history', () => {
-    expect(buildRequest('gpt-4o-mini', input).messages).toHaveLength(2);
-  });
-
-  test('puts channel history in its own turn, before the message under analysis', () => {
-    const request = buildRequest('gpt-4o-mini', {
+  test('puts channel history before the message and marks which one is evaluated', () => {
+    const state = buildState({
       ...input,
       previousMessages: [
         { author: 'alice', roles: ['Mod'], content: 'hi' },
@@ -118,8 +53,75 @@ describe('buildRequest', () => {
       ]
     });
 
-    expect(request.messages).toHaveLength(3);
-    expect(request.messages[1]?.content).toContain('[alice | Roles: Mod]: hi');
-    expect(request.messages[1]?.content).toContain('[bob | Roles: None]: hey');
+    expect(state).toStartWith(PREAMBLE);
+    expect(state).toContain('[alice | Roles: Mod]: hi\n[bob | Roles: None]: hey');
+    expect(state.indexOf('[bob')).toBeLessThan(state.indexOf('New message to evaluate:'));
+    expect(state).toEndWith('Author: spammer#0\nRoles: Member\nMessage: click here');
+  });
+});
+
+describe('requests', () => {
+  const input = { content: 'click here', previousMessages: [], meta: null };
+
+  test('Clef gets the measured questions', () => {
+    expect(clefRequest(input)).toEqual({
+      model: 'clef',
+      state: buildState(input),
+      questions: QUESTIONS
+    });
+    expect(Object.keys(QUESTIONS.severity.criteria)).toEqual(['high', 'medium', 'low', 'none']);
+  });
+
+  test('Clairic reads the raw message, without the preamble', () => {
+    expect(clairicRequest('hello')).toEqual({ model: 'clairic', state: 'hello', fields: FIELDS });
+  });
+
+  test('calls the per-model Workers AI endpoint', () => {
+    expect(modelUrl('abc', 'clef')).toBe(
+      'https://api.cloudflare.com/client/v4/accounts/abc/ai/run/@cf/cloudflare/clef'
+    );
+  });
+});
+
+const decodes = <A>(effect: Effect.Effect<A, unknown>) =>
+  Exit.isSuccess(Effect.runSyncExit(effect));
+
+describe('decodeClef', () => {
+  test('reads the probabilities out of the result envelope', () => {
+    const response = Effect.runSync(decodeClef(clefBody(0.97, 'high', 0.91)));
+
+    expect(toScores(response)).toEqual({
+      pSpam: 0.97,
+      choice: 'high',
+      probabilities: { high: 0.91, medium: 0.03, low: 0.03, none: 0.03 }
+    });
+  });
+
+  test.each([
+    ['success: false', { ...clefBody(0.97, 'high', 0.91), success: false }],
+    ['no envelope', clefBody(0.97, 'high', 0.91).result],
+    ['missing question', { success: true, result: { answers: { severity: {} } } }],
+    ['probability out of range', clefBody(1.5, 'high', 0.91)],
+    ['unknown choice', clefBody(0.97, 'critical', 0.91)],
+    ['not an object', 'Internal Server Error'],
+    ['null', null]
+  ])('rejects %s', (_name, body) => {
+    expect(decodes(decodeClef(body))).toBe(false);
+  });
+});
+
+describe('decodeClairic', () => {
+  test('accepts a full answer set', () => {
+    expect(decodes(decodeClairic(clairicBody()))).toBe(true);
+  });
+
+  test('tolerates fields Clairic left out', () => {
+    expect(decodes(decodeClairic({ success: true, result: { answers: {} } }))).toBe(true);
+  });
+
+  test('rejects a mistyped value', () => {
+    const body = clairicBody({ cut_percent: { value: 'ten', confidence: 1 } });
+
+    expect(decodes(decodeClairic(body))).toBe(false);
   });
 });
