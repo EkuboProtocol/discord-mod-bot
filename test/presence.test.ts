@@ -155,38 +155,28 @@ describe('formatChange', () => {
 });
 
 describe('formatStatuses', () => {
-  test('rotates one stat per line, including Robinhood Chain STONX', () => {
+  test('rotates one stat per line and does not include STONX', () => {
     expect(
-      formatStatuses({ price: 0.4807, changePct: 1.7 }, 25_700_000, 12_000_000, 45_000, {
-        price: 1.0282,
-        changePct: -2.5
-      })
-    ).toEqual([
-      'EKUBO $0.4807 ▲1.7%',
-      '24h vol $25.7M',
-      'TVL $12.0M',
-      '24h fees $45.0K',
-      'STONX $1.0282 ▼2.5%'
-    ]);
+      formatStatuses({ price: 0.4807, changePct: 1.7 }, 25_700_000, 12_000_000, 45_000)
+    ).toEqual(['EKUBO $0.4807 ▲1.7%', '24h vol $25.7M', 'TVL $12.0M', '24h fees $45.0K']);
   });
 
   test('omits unavailable and non-finite stats but retains zero', () => {
-    expect(formatStatuses(null, 0, NaN, Infinity, { price: NaN, changePct: null })).toEqual([
-      '24h vol $0'
-    ]);
-    expect(formatStatuses(null, null, null, null, null)).toEqual([]);
+    expect(formatStatuses(null, 0, NaN, Infinity)).toEqual(['24h vol $0']);
+    expect(formatStatuses(null, null, null, null)).toEqual([]);
   });
 });
 
 describe('fetchStatuses', () => {
-  test('uses protocol TVL directly, prices fees, and survives a failed STONX endpoint', async () => {
+  test('uses protocol TVL directly, prices fees, and never requests Robinhood Chain prices', async () => {
     const { Effect } = await import('effect');
     const { fetchStatuses } = await import('../src/presence');
     const originalFetch = globalThis.fetch;
     const day = new Date(Date.now() - 86400000).toISOString();
+    const requested: string[] = [];
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes('/4663/')) return new Response('', { status: 503 });
+      requested.push(url);
       let body: unknown;
       if (url.endsWith('/overview/volume')) {
         body = {
@@ -221,6 +211,7 @@ describe('fetchStatuses', () => {
         'TVL $28.3M',
         '24h fees $0'
       ]);
+      expect(requested.some(url => url.includes('/4663/'))).toBe(false);
     } finally {
       globalThis.fetch = originalFetch;
     }
