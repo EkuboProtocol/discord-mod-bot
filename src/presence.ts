@@ -5,8 +5,6 @@ import { ApiError } from './errors';
 
 const CHAIN_ID = 1;
 const EKUBO_ADDRESS = '0x04c46e830bb56ce22735d5d8fc9cb90309317d0f';
-const STONX_CHAIN_ID = 4663;
-const STONX_ADDRESS = '0x570c5aa79c798e7a418412cc8399ae5bcce570c5';
 
 export interface PriceInfo {
   readonly price: number;
@@ -81,15 +79,10 @@ function fetchJson<A, I>(
   );
 }
 
-function fetchPrice(
-  apiBase: string,
-  timeoutMs: number,
-  chainId = CHAIN_ID,
-  address = EKUBO_ADDRESS
-): Effect.Effect<PriceInfo | null, ApiError> {
-  const tokenUrl = `${apiBase}/tokens/${chainId}/${address}`;
+function fetchPrice(apiBase: string, timeoutMs: number): Effect.Effect<PriceInfo | null, ApiError> {
+  const tokenUrl = `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}`;
   const historyUrl =
-    `${apiBase}/tokens/${chainId}/${address}/price-history` + '?interval=900&duration=86400';
+    `${apiBase}/tokens/${CHAIN_ID}/${EKUBO_ADDRESS}/price-history` + '?interval=900&duration=86400';
 
   return Effect.gen(function* () {
     const [token, history] = yield* Effect.all(
@@ -168,10 +161,9 @@ export const fetchStatuses = Effect.fn('fetchStatuses')(function* ({
   apiBase,
   timeoutMs
 }: PresenceConfig) {
-  const [price, stonx, overview, tvl, tokens] = yield* Effect.all(
+  const [price, overview, tvl, tokens] = yield* Effect.all(
     [
       optionalStat(fetchPrice(apiBase, timeoutMs)),
-      optionalStat(fetchPrice(apiBase, timeoutMs, STONX_CHAIN_ID, STONX_ADDRESS)),
       optionalStat(fetchJson(`${apiBase}/overview/volume`, VolumeOverviewResponse, timeoutMs)),
       optionalStat(fetchJson(TVL_URL, Schema.Number, timeoutMs)),
       optionalStat(fetchJson(`${apiBase}/tokens`, TokensResponse, timeoutMs))
@@ -190,7 +182,7 @@ export const fetchStatuses = Effect.fn('fetchStatuses')(function* ({
         day
       )
     : null;
-  return formatStatuses(price, volume, tvl, fees, stonx);
+  return formatStatuses(price, volume, tvl, fees);
 });
 
 export function formatUsdCompact(value: number): string {
@@ -213,15 +205,13 @@ export function formatStatuses(
   price: PriceInfo | null,
   volume: number | null,
   tvl: number | null,
-  fees: number | null,
-  stonx: PriceInfo | null
+  fees: number | null
 ): string[] {
   return [
     formatPrice('EKUBO', price),
     formatMetric('24h vol', volume),
     formatMetric('TVL', tvl),
-    formatMetric('24h fees', fees),
-    formatPrice('STONX', stonx)
+    formatMetric('24h fees', fees)
   ].filter(status => status !== '');
 }
 
